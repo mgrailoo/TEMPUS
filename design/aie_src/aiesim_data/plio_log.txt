@@ -1,0 +1,562 @@
+Reading configuration from: C:\aie_src_2025-3-28\ssh_workflow\design\aie_src\aiesim_data\..\..\design_configs\config.json
+Successfully read parameters from config file:
+  GEMM_SIZE: 32
+  DIM: 16
+  DATA_TYPE: int16
+  WRD_LN: 8
+  SUB_TILE_M: 4
+  SUB_TILE_K: 4
+  SUB_TILE_N: 4
+  GRAPH_ITER_CNT: 2
+  SPLIT: 2
+  CASC_LN: 8
+  TARGET_HW_EMU: 0
+  ITER_CNT: 1
+  N_SAMPLES: 1
+  GEMM_INSTS: 1
+  EN_TRACE: 0
+  TILE_MEM_BYTES: 32768
+  PL_FREQ: 312.5
+  ENABLE_ML_BENCHMARKS: 0
+  MATRIX_A_FILE: 
+  MATRIX_B_FILE: 
+  RANDOM_SEED: 42
+  TARGET: hw
+Matrix A: Generating random data (no input file specified)
+Matrix B: Generating random data (no input file specified)
+
+Configuration Summary:
+GEMM_SIZE: 32
+DIM: 16
+SPLIT: 2
+CASC_LN: 8
+DIM_A, DIM_AB, DIM_B: 16, 32, 4
+GRAPH_ITER_CNT: 2 (computed: (32×32)/(16×16)/2)
+Data Type: int16
+Sub-Tile Size (M,K,N): 4x4x4
+Sub-Tiles per Tile: 4x4
+Word Length (WRD_LN): 8 elements per 128-bit PLIO (calculated: 128/int16 bits)
+Target HW EMU: 0
+Iteration Count: 1
+N Samples: 1
+GEMM Instances: 1
+Enable Trace: 0
+Random Seed: 42
+Valid (TP_DIM_A, TP_DIM_AB, TP_DIM_B) choices:
+(4,32,4), (8,32,4), (16,32,4)
+Using random seed: 42 for reproducible matrix generation
+
+Matrix dimensions:
+A: (32, 32)
+B: (32, 32)
+C: (32, 32)
+
+Generating split output files with DIM=16
+Matrix C shape: 32x32
+Split: 2, Rows per split: 16, Cols per split: 16
+Data type: int16
+Sub-tile size (C MxN): 4x4 (AI Engine-ML instruction set)
+Sub-tiles per tile: 4x4
+  Block [0,0]: 1x1 tiles of size 16x16
+  Sub-tiles: 4x4 sub-tiles of size 4x4
+  Block [1,0]: 1x1 tiles of size 16x16
+  Sub-tiles: 4x4 sub-tiles of size 4x4
+Generated gemm_32x32x32_ioFiles\c0_golden.txt: 64 lines (expected: 64)
+  Block [0,1]: 1x1 tiles of size 16x16
+  Sub-tiles: 4x4 sub-tiles of size 4x4
+  Block [1,1]: 1x1 tiles of size 16x16
+  Sub-tiles: 4x4 sub-tiles of size 4x4
+Generated gemm_32x32x32_ioFiles\c1_golden.txt: 64 lines (expected: 64)
+
+Generating cascade input files:
+Matrix A: 32x32, Matrix B: 32x32
+Split: 2, Cascade Length: 8, DIM: 16
+Sub-tile size (MxKxN): 4x4x4
+Sub-tiles per tile: 4x4
+
+Generating Matrix A cascade files (a0_casc*.txt):
+
+Writing gemm_32x32x32_ioFiles\a0_casc0.txt
+Cascade 0: Columns 0 to 3
+  Effective tile dimensions: 16x4 (DIM=16, SPLIT_SIZE=16, CASC_SIZE=4)
+  Elements per block: 64
+  Lines per block: 8
+  Broadcast count: 1
+  Block 0: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 0 (64 elements)
+  Block 1: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 1 (64 elements)
+
+File verification for gemm_32x32x32_ioFiles\a0_casc0.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Broadcast count: 1
+Effective tile dimensions: 16x4
+Tiles per block: 1x1
+Reference MATA_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\a0_casc1.txt
+Cascade 1: Columns 4 to 7
+  Effective tile dimensions: 16x4 (DIM=16, SPLIT_SIZE=16, CASC_SIZE=4)
+  Elements per block: 64
+  Lines per block: 8
+  Broadcast count: 1
+  Block 0: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 0 (64 elements)
+  Block 1: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 1 (64 elements)
+
+File verification for gemm_32x32x32_ioFiles\a0_casc1.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Broadcast count: 1
+Effective tile dimensions: 16x4
+Tiles per block: 1x1
+Reference MATA_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\a0_casc2.txt
+Cascade 2: Columns 8 to 11
+  Effective tile dimensions: 16x4 (DIM=16, SPLIT_SIZE=16, CASC_SIZE=4)
+  Elements per block: 64
+  Lines per block: 8
+  Broadcast count: 1
+  Block 0: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 0 (64 elements)
+  Block 1: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 1 (64 elements)
+
+File verification for gemm_32x32x32_ioFiles\a0_casc2.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Broadcast count: 1
+Effective tile dimensions: 16x4
+Tiles per block: 1x1
+Reference MATA_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\a0_casc3.txt
+Cascade 3: Columns 12 to 15
+  Effective tile dimensions: 16x4 (DIM=16, SPLIT_SIZE=16, CASC_SIZE=4)
+  Elements per block: 64
+  Lines per block: 8
+  Broadcast count: 1
+  Block 0: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 0 (64 elements)
+  Block 1: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 1 (64 elements)
+
+File verification for gemm_32x32x32_ioFiles\a0_casc3.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Broadcast count: 1
+Effective tile dimensions: 16x4
+Tiles per block: 1x1
+Reference MATA_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\a0_casc4.txt
+Cascade 4: Columns 16 to 19
+  Effective tile dimensions: 16x4 (DIM=16, SPLIT_SIZE=16, CASC_SIZE=4)
+  Elements per block: 64
+  Lines per block: 8
+  Broadcast count: 1
+  Block 0: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 0 (64 elements)
+  Block 1: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 1 (64 elements)
+
+File verification for gemm_32x32x32_ioFiles\a0_casc4.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Broadcast count: 1
+Effective tile dimensions: 16x4
+Tiles per block: 1x1
+Reference MATA_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\a0_casc5.txt
+Cascade 5: Columns 20 to 23
+  Effective tile dimensions: 16x4 (DIM=16, SPLIT_SIZE=16, CASC_SIZE=4)
+  Elements per block: 64
+  Lines per block: 8
+  Broadcast count: 1
+  Block 0: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 0 (64 elements)
+  Block 1: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 1 (64 elements)
+
+File verification for gemm_32x32x32_ioFiles\a0_casc5.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Broadcast count: 1
+Effective tile dimensions: 16x4
+Tiles per block: 1x1
+Reference MATA_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\a0_casc6.txt
+Cascade 6: Columns 24 to 27
+  Effective tile dimensions: 16x4 (DIM=16, SPLIT_SIZE=16, CASC_SIZE=4)
+  Elements per block: 64
+  Lines per block: 8
+  Broadcast count: 1
+  Block 0: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 0 (64 elements)
+  Block 1: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 1 (64 elements)
+
+File verification for gemm_32x32x32_ioFiles\a0_casc6.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Broadcast count: 1
+Effective tile dimensions: 16x4
+Tiles per block: 1x1
+Reference MATA_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\a0_casc7.txt
+Cascade 7: Columns 28 to 31
+  Effective tile dimensions: 16x4 (DIM=16, SPLIT_SIZE=16, CASC_SIZE=4)
+  Elements per block: 64
+  Lines per block: 8
+  Broadcast count: 1
+  Block 0: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 0 (64 elements)
+  Block 1: 1x1 tiles of size 16x4
+  Sub-tiles: 4x1 sub-tiles of size 4x4 (A uses M×K)
+  Processed and broadcast block 1 (64 elements)
+
+File verification for gemm_32x32x32_ioFiles\a0_casc7.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Broadcast count: 1
+Effective tile dimensions: 16x4
+Tiles per block: 1x1
+Reference MATA_SZ calculation: 16
+
+Generating Matrix B cascade files for split 0 (b0_casc*.txt):
+
+Writing gemm_32x32x32_ioFiles\b0_casc0.txt
+Split 0, Cascade 0
+Block boundaries: rows 0:4, cols 0:16
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b0_casc0.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b0_casc1.txt
+Split 0, Cascade 1
+Block boundaries: rows 4:8, cols 0:16
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b0_casc1.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b0_casc2.txt
+Split 0, Cascade 2
+Block boundaries: rows 8:12, cols 0:16
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b0_casc2.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b0_casc3.txt
+Split 0, Cascade 3
+Block boundaries: rows 12:16, cols 0:16
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b0_casc3.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b0_casc4.txt
+Split 0, Cascade 4
+Block boundaries: rows 16:20, cols 0:16
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b0_casc4.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b0_casc5.txt
+Split 0, Cascade 5
+Block boundaries: rows 20:24, cols 0:16
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b0_casc5.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b0_casc6.txt
+Split 0, Cascade 6
+Block boundaries: rows 24:28, cols 0:16
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b0_casc6.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b0_casc7.txt
+Split 0, Cascade 7
+Block boundaries: rows 28:32, cols 0:16
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b0_casc7.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Generating Matrix B cascade files for split 1 (b1_casc*.txt):
+
+Writing gemm_32x32x32_ioFiles\b1_casc0.txt
+Split 1, Cascade 0
+Block boundaries: rows 0:4, cols 16:32
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b1_casc0.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b1_casc1.txt
+Split 1, Cascade 1
+Block boundaries: rows 4:8, cols 16:32
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b1_casc1.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b1_casc2.txt
+Split 1, Cascade 2
+Block boundaries: rows 8:12, cols 16:32
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b1_casc2.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b1_casc3.txt
+Split 1, Cascade 3
+Block boundaries: rows 12:16, cols 16:32
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b1_casc3.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b1_casc4.txt
+Split 1, Cascade 4
+Block boundaries: rows 16:20, cols 16:32
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b1_casc4.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b1_casc5.txt
+Split 1, Cascade 5
+Block boundaries: rows 20:24, cols 16:32
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b1_casc5.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b1_casc6.txt
+Split 1, Cascade 6
+Block boundaries: rows 24:28, cols 16:32
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b1_casc6.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Writing gemm_32x32x32_ioFiles\b1_casc7.txt
+Split 1, Cascade 7
+Block boundaries: rows 28:32, cols 16:32
+  Effective tile dimensions: 4x16 (DIM=16, CASC_SIZE=4, SPLIT_SIZE=16)
+  Sub-tiles: 1x4 sub-tiles of size 4x4 (B uses K×N)
+
+File verification for gemm_32x32x32_ioFiles\b1_casc7.txt:
+Written 16 lines
+Expected lines: 16 (based on reference formula)
+Elements per row: 8 (should be 8)
+Per-column broadcast count: 1
+Total repeats of the whole file: 2
+Effective tile dimensions: 4x16
+Number of tiles: 1x1
+Reference MATB_SZ calculation: 16
+
+Generating consolidated golden files:
+Generated a_golden.txt with 128 lines at: gemm_32x32x32_ioFiles\a_golden.txt
+Generated b_golden.txt with 256 lines at: gemm_32x32x32_ioFiles\b_golden.txt
+Generated c_golden.txt with 128 lines at: gemm_32x32x32_ioFiles\c_golden.txt
+
+Complete data generation completed successfully!
+Output directory: gemm_32x32x32_ioFiles
+Matrix dimensions: A=(32, 32), B=(32, 32), C=(32, 32)
+PLIO Optimization: int16 with 4x4 sub-tiles (AI Engine-ML instruction set)
+
+Generated files:
+  - matrix_A_input.txt
+  - matrix_B_input.txt
+  - matrix_C_golden.txt
+  - c0_golden.txt
+  - c1_golden.txt
+  - a0_casc0.txt
+  - a0_casc1.txt
+  - a0_casc2.txt
+  - a0_casc3.txt
+  - a0_casc4.txt
+  - a0_casc5.txt
+  - a0_casc6.txt
+  - a0_casc7.txt
+  - b0_casc0.txt
+  - b0_casc1.txt
+  - b0_casc2.txt
+  - b0_casc3.txt
+  - b0_casc4.txt
+  - b0_casc5.txt
+  - b0_casc6.txt
+  - b0_casc7.txt
+  - b1_casc0.txt
+  - b1_casc1.txt
+  - b1_casc2.txt
+  - b1_casc3.txt
+  - b1_casc4.txt
+  - b1_casc5.txt
+  - b1_casc6.txt
+  - b1_casc7.txt
+  - a_golden.txt
+  - b_golden.txt
+  - c_golden.txt
+
+Usage: python plioGen.py
+  - All parameters are read from config.json
+  - Matrix files can be specified in config.json (MATRIX_A_FILE, MATRIX_B_FILE)
+  - If matrix files are empty/not found, random matrices are generated
