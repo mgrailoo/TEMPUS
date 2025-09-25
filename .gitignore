@@ -1,0 +1,83 @@
+# AI Engine GEMM Project .gitignore
+# =====================================
+
+# Build directories
+build/
+logs/
+reports/
+*.log
+
+# AI Engine specific files
+*.aiedb
+*.aieprj
+*.xpe
+*.vcd
+active_cores.json
+
+# Vivado files
+*.xpr
+*.xsa
+*.bit
+*.hwh
+*.hwdef
+*.tcl
+*.dcp
+*.rpt
+*.log
+*.jou
+*.str
+*.mif
+*.coe
+*.mem
+*.elf
+*.bin
+*.hex
+
+# Vitis files
+*.xpfm
+*.xclbin
+*.xrt.ini
+*.ini
+
+# Temporary files
+*.tmp
+*.temp
+*~
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Keep important files
+!design/
+!scripts/
+!docs/
+!Makefile
+!README.md
+!*.md
+!*.json
+!*.ps1
+!*.sh
