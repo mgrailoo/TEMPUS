@@ -1,8 +1,10 @@
 {
-  "TARGET": "hw_emu",
+  "TARGET": "hw",
   "GEMM_SIZE": 32,
   "DIM": 16,
-  "DATA_TYPE": "int32",
+  "_comment_DIM": "Changed from 4 to GEMM_SIZE/2 if it fits output matrix in 32kB memory",
+  "DATA_TYPE": "int16",
+  "_comment_DATA_TYPE": "int32 or int16",
   "TILE_MEM_BYTES": 32768,
   "SPLIT": 2,
   "CASC_LN": 8,
@@ -12,8 +14,12 @@
   "EN_TRACE": 0,
   "PL_FREQ": 312.5,
   "ENABLE_ML_BENCHMARKS": 1,
-  "WRD_LN": 4,
+  "WRD_LN": 8,
+  "_comment_WRD_LN": "8 for int16 and 4 for int32 elements per 128-bit PLIO",
   "SUB_TILE_M": 4,
   "SUB_TILE_K": 4,
-  "SUB_TILE_N": 2
+  "SUB_TILE_N": 4,
+  "_comment_SUB_TILE_N": "2 for int32 and 4 for int16",
+  "GRAPH_ITER_CNT": 2,
+  "_comment_GRAPH_ITER_CNT": "Calculated automatically based on DIM and GEMM_SIZE"
 }

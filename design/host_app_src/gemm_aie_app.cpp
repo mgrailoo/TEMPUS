@@ -180,9 +180,9 @@ int main(int argc, char ** argv) {
     // PHASE 0.2: CONFIGURATION DISPLAY AND VALIDATION
     // ========================================================================
     // Print configuration information and validate system parameters
-    printConfigurationInfo();        // Display matrix dimensions, data types, etc.
-    printValidTileDimensions();      // Show valid tile dimension combinations
-    verifyBufferConfiguration();     // Validate memory buffer configuration
+    // printConfigurationInfo();        // Display matrix dimensions, data types, etc.
+    // printValidTileDimensions();      // Show valid tile dimension combinations
+    // verifyBufferConfiguration();     // Validate memory buffer configuration
 
     // ========================================================================
     // PHASE 0.3: HOST MEMORY ALLOCATION WITH ADDRESS ALIGNMENT
@@ -221,6 +221,14 @@ int main(int argc, char ** argv) {
     // timing measurements to enable performance analysis and optimization.
     
     try {
+        long long phase1_us = 0;
+        long long phase2_us = 0;
+        long long phase3_us = 0;
+        long long phase4_us = 0;
+        long long phase5_us = 0;
+        long long phase6_us = 0;
+        long long phase7_us = 0;
+        long long phase8_us = 0;
         // ========================================================================
         // PHASE 1: DEVICE AND XCLBIN INITIALIZATION
         // ========================================================================
@@ -235,7 +243,7 @@ int main(int argc, char ** argv) {
         if (initializeDeviceAndLoadXclbin(device, xclbin_uuid, argv[1]) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-        printElapsedTime(t_phase1, "PHASE 1 TOTAL: Device + XCLBIN initialization");
+    phase1_us = logElapsedTime(t_phase1, "PHASE 1 TOTAL: Device + XCLBIN initialization");
 
         // ========================================================================
         // PHASE 2: BUFFER CREATION AND MAPPING
@@ -252,7 +260,7 @@ int main(int argc, char ** argv) {
                                inA_bomapped, inB_bomapped, outC_bomapped) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-        printElapsedTime(t_phase2, "PHASE 2 TOTAL: Buffer creation + mapping");
+    phase2_us = logElapsedTime(t_phase2, "PHASE 2 TOTAL: Buffer creation + mapping");
 
         // ========================================================================
         // PHASE 3: DATA TRANSFER TO DEVICE
@@ -265,10 +273,11 @@ int main(int argc, char ** argv) {
         if (transferDataToDevice(host_mem_A, host_mem_B, inA_bomapped, inB_bomapped, outC_bomapped, inA_bohdl, inB_bohdl) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-        printElapsedTime(t_phase3, "PHASE 3 TOTAL: Data transfer + sync to device");
+    phase3_us = logElapsedTime(t_phase3, "PHASE 3 TOTAL: Data transfer + sync to device");
 
         // Debug: Print input buffers after transfer for verification
-        printInputBuffers(inA_bomapped, inB_bomapped, ALIGNED_MATA_BYTES, ALIGNED_MATB_BYTES);
+    // DEBUG: enable if input buffer inspection is required
+    // printInputBuffers(inA_bomapped, inB_bomapped, ALIGNED_MATA_BYTES, ALIGNED_MATB_BYTES);
 
         // ========================================================================
         // PHASE 4: KERNEL AND GRAPH CREATION
@@ -277,14 +286,17 @@ int main(int argc, char ** argv) {
         // This phase instantiates the DMA kernel and AI Engine graph
         auto t_phase4 = std::chrono::high_resolution_clock::now();
         printf("\n=== PHASE 4: Kernel and Graph Creation ===\n");
-        
-        xrt::kernel dma_hls_khdl;                              // DMA kernel handle
+                    // Graph is already created in main, just verify it's valid
         xrt::graph gemm_aie_gr(device, xclbin_uuid, "g");      // AI Engine graph handle
         
-        if (createKernelAndGraph(device, xclbin_uuid, dma_hls_khdl, gemm_aie_gr) != EXIT_SUCCESS) {
+        printf("Graph object already created and ready\n");
+        xrt::kernel dma_hls_khdl;                              // DMA kernel handle
+        
+        
+        if (createKernel(device, xclbin_uuid, dma_hls_khdl) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-        printElapsedTime(t_phase4, "PHASE 4 TOTAL: Kernel + Graph creation");
+    phase4_us = logElapsedTime(t_phase4, "PHASE 4 TOTAL: Kernel + Graph creation");
 
         // ========================================================================
         // PHASE 5: KERNEL LAUNCH
@@ -299,7 +311,7 @@ int main(int argc, char ** argv) {
         if (launchKernel(dma_hls_khdl, inA_bohdl, inB_bohdl, outC_bohdl, dma_hls_rhdl) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-        printElapsedTime(t_phase5, "PHASE 5 TOTAL: Kernel launch");
+    phase5_us = logElapsedTime(t_phase5, "PHASE 5 TOTAL: Kernel launch");
 
         // ========================================================================
         // PHASE 6: CORE COMPUTATION (Graph run + DMA wait + Output sync)
@@ -308,32 +320,40 @@ int main(int argc, char ** argv) {
         // This phase runs the actual GEMM computation and handles all data movement
         // This is the most important runtime measurement for performance evaluation
         auto t_core_computation = std::chrono::high_resolution_clock::now();
+        std::chrono::high_resolution_clock::time_point t_output_sync;
         printf("\n=== PHASE 6: Core Computation (Graph run + DMA wait + Output sync) ===\n");
         
         // Core computation (Graph run + DMA wait + Output sync)
         if (executeComputation(gemm_aie_gr, dma_hls_rhdl, outC_bomapped, outC_bohdl) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-        // Print the combined core computation time (most important metric)
-        printElapsedTime(t_core_computation, "*** CORE COMPUTATION TOTAL: Graph run + DMA wait + Output sync ***");
+        phase6_us = logElapsedTime(t_core_computation, "*** CORE COMPUTATION TOTAL: Graph run + DMA wait ***");
+
+            // Sync output buffer from device
+        auto buffer_sync_start = std::chrono::high_resolution_clock::now();
+        outC_bohdl.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        printf("Output buffer synced successfully\n");
+        phase7_us = logElapsedTime(buffer_sync_start, "phase 7: Buffer sync");
+        //auto phase7_us = logElapsedTime(t_core_computation, "*** CORE COMPUTATION TOTAL: Graph run + DMA wait + Output sync ***");
+
 
         // ========================================================================
         // PHASE 7: OUTPUT PROCESSING AND FILE WRITING
         // ========================================================================
         // Debug output and file writing with timing measurement
-        auto t_phase7 = std::chrono::high_resolution_clock::now();
-        printf("\n=== PHASE 7: Output Processing and File Writing ===\n");
-        
+        auto t_phase8 = std::chrono::high_resolution_clock::now();
+        printf("\n=== PHASE 8: Output Processing and File Writing ===\n");
+
         // Debug output
-        printOutputBuffer(outC_bomapped, ALIGNED_MATC_BYTES);
+    // DEBUG: enable if output buffer inspection is required
+    // printOutputBuffer(outC_bomapped, ALIGNED_MATC_BYTES);
         
         // Write output file with timing
-        auto t_file_write = std::chrono::high_resolution_clock::now();
+
         if (writeOutputToFile(outC_bomapped, outC_bohdl, host_mem_C) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-        printElapsedTime(t_file_write, "File writing");
-        printElapsedTime(t_phase7, "PHASE 7 TOTAL: Output processing + file writing");
+    phase8_us = logElapsedTime(t_phase8, "PHASE 8 TOTAL: Output processing + file writing");
         
        
         // ========================================================================
@@ -341,19 +361,25 @@ int main(int argc, char ** argv) {
         // ========================================================================
         // Print comprehensive timing summary for performance analysis
         // This helps identify bottlenecks and optimize the application
-        printf("\n=== OVERALL TIMING SUMMARY ===\n");
-        printElapsedTime(t_phase1, "Phase 1: Device + XCLBIN initialization");
-        printElapsedTime(t_phase2, "Phase 2: Buffer creation + mapping");
-        printElapsedTime(t_phase3, "Phase 3: Data transfer + sync to device");
-        printElapsedTime(t_phase4, "Phase 4: Kernel + Graph creation");
-        printElapsedTime(t_phase5, "Phase 5: Kernel launch");
-        printElapsedTime(t_core_computation, "*** CORE COMPUTATION: Graph run + DMA wait + Output sync ***");
-        printElapsedTime(start_time, "TOTAL PROGRAM EXECUTION TIME");
+        printf("\n=== OVERALL TIMING SUMMARY in Configuration: GEMM_SIZE=%d, DIM=%d ===\n", GEMM_SIZE, DIM);
+        printDurationUsMs(phase1_us, "Phase 1: Device + XCLBIN initialization");
+        printDurationUsMs(phase2_us, "Phase 2: Buffer creation + mapping");
+        printDurationUsMs(phase3_us, "Phase 3: Data transfer + sync to device");
+        printDurationUsMs(phase4_us, "Phase 4: Kernel + Graph creation");
+        printDurationUsMs(phase5_us, "Phase 5: Kernel launch");
+        printDurationUsMs(phase6_us, "PHASE 6 TOTAL-Compute: Graph run + DMA wait ***");
+        printDurationUsMs(phase7_us, "PHASE 7: Output sync ***");
+        printDurationUsMs(phase8_us, "PHASE 8: Output processing + file writing");
+        printDurationUsMs(phase3_us + phase5_us + phase6_us + phase7_us, "PHASES 3,5,6,7 TOTAL: Data transfer + Kernel launch +Graph run + DMA wait + Output sync ***");
+
+
+     long long total_program_us = getElapsedMicroseconds(start_time);
+     printDurationUsMs(total_program_us, "TOTAL PROGRAM EXECUTION TIME");
 
         // ========================================================================
         // ML BENCHMARK COMPARISON
         // ========================================================================
-        // Run PyTorch and NumPy benchmarks for performance comparison
+        // Run PyTorch benchmarks for performance comparison
         // This provides a CPU baseline for AI Engine performance evaluation
         printf("\n=== ML BENCHMARK COMPARISON ===\n");
         printf("Matrix Size: %dx%dx%d\n", GEMM_SIZE, GEMM_SIZE, GEMM_SIZE);
@@ -395,47 +421,35 @@ int main(int argc, char ** argv) {
         if (files_found && file_a.good() && file_b.good()) {
             printf("✓ Input matrix files found\n");
             
-            // Check if Python packages are available
-            printf("Checking Python ML stack availability...\n");
-            int numpy_check = system("python3 -c 'import numpy' 2>/dev/null");
+            // Check if PyTorch is available (avoiding NumPy conflicts)
+            printf("Checking PyTorch availability...\n");
             int pytorch_check = system("python3 -c 'import torch' 2>/dev/null");
             
-            if (numpy_check != 0 || pytorch_check != 0) {
-                printf("⚠ Python ML packages not found on the board.\n");
-                printf("Please install them by running: ./setup_ml_environment.sh\n");
-                printf("Then re-run the application to enable benchmark comparisons.\n");
+            if (pytorch_check != 0) {
+                printf("⚠ PyTorch not found on the board.\n");
+                printf("Install PyTorch if you want benchmark comparisons.\n");
+                printf("Note: NumPy benchmarks disabled due to version conflicts.\n");
             } else {
-                printf("✓ Python ML stack is available.\n");
+                printf("✓ PyTorch is available for benchmarking.\n");
                 
-                // Run NumPy benchmark
-                printf("\n--- Running NumPy Benchmark ---\n");
-                std::string numpy_cmd = "python3 numpy_benchmark.py " + matrix_a_file + " " + matrix_b_file + 
-                                        " numpy_result.txt --size " + std::to_string(GEMM_SIZE) + 
-                                        " --dtype " + dtype_str + " --iterations 10 --target " + std::string(TARGET_STR);
-                
-                int numpy_result = system(numpy_cmd.c_str());
-                if (numpy_result == 0) {
-                    printf("✓ NumPy benchmark completed successfully\n");
-                } else {
-                    printf("⚠ NumPy benchmark failed (exit code: %d)\n", numpy_result);
-                }
-                
-                // Run PyTorch benchmark
-                printf("\n--- Running PyTorch Benchmark ---\n");
+                // Run PyTorch benchmark only (avoid NumPy conflicts)
+                printf("\n--- Running PyTorch CPU Benchmark ---\n");
                 std::string pytorch_cmd = "python3 pytorch_benchmark.py " + matrix_a_file + " " + matrix_b_file + 
                                           " pytorch_result.txt --size " + std::to_string(GEMM_SIZE) + 
                                           " --dtype " + dtype_str + " --device cpu --iterations 10 --target " + std::string(TARGET_STR);
                 
+                printf("Executing: %s\n", pytorch_cmd.c_str());
                 int pytorch_result = system(pytorch_cmd.c_str());
                 if (pytorch_result == 0) {
                     printf("✓ PyTorch benchmark completed successfully\n");
                 } else {
                     printf("⚠ PyTorch benchmark failed (exit code: %d)\n", pytorch_result);
+                    printf("  This may be due to PyTorch/NumPy version conflicts\n");
                 }
                 
-                printf("\n=== BENCHMARK COMPARISON COMPLETE ===\n");
-                printf("Results saved to: numpy_result.txt, pytorch_result.txt\n");
-                printf("Compare these with AI Engine performance above.\n");
+                printf("\n=== PYTORCH BENCHMARK COMPLETE ===\n");
+                printf("Result saved to: pytorch_result.txt\n");
+                printf("Compare PyTorch CPU performance with AI Engine above.\n");
             }
         } else {
             printf("⚠ Input matrix files not found. Skipping benchmark comparisons.\n");
@@ -443,10 +457,10 @@ int main(int argc, char ** argv) {
             for (const auto& location : possible_locations) {
                 printf("  - %s\n", location.c_str());
             }
-            printf("\nTo run benchmarks manually:\n");
-            printf("1. Run: ./setup_ml_environment.sh\n");
-            printf("2. Run: python3 numpy_benchmark.py matrix_A_input.txt matrix_B_input.txt numpy_result.txt\n");
-            printf("3. Run: python3 pytorch_benchmark.py matrix_A_input.txt matrix_B_input.txt pytorch_result.txt\n");
+            printf("\nTo run PyTorch benchmark manually:\n");
+            printf("1. Install PyTorch: pip3 install torch --index-url https://download.pytorch.org/whl/cpu\n");
+            printf("2. Run: python3 pytorch_benchmark.py matrix_A_input.txt matrix_B_input.txt pytorch_result.txt\n");
+            printf("Note: NumPy benchmarks disabled due to version conflict issues.\n");
         }
 
         printf("\nProgram completed successfully!\n");

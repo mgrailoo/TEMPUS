@@ -148,6 +148,9 @@ struct aligned_allocator {
 // ============================================================================
 
 // Timing and duration functions
+long long getElapsedMicroseconds(const std::chrono::high_resolution_clock::time_point& start);
+void printDurationUsMs(long long elapsed_us, const char* stage);
+long long logElapsedTime(const std::chrono::high_resolution_clock::time_point& start, const char* stage);
 void printElapsedTime(const std::chrono::high_resolution_clock::time_point& start, const char* stage);
 void printDurationSince(const std::chrono::high_resolution_clock::time_point& t0, const char* label);
 
@@ -187,8 +190,8 @@ int transferDataToDevice(const std::vector<ap_int<128>, aligned_allocator<ap_int
                         const std::vector<ap_int<128>, aligned_allocator<ap_int<128>>>& host_mem_B,
                         ap_int<128>* inA_bomapped, ap_int<128>* inB_bomapped, ap_int<128>* outC_bomapped,
                         xrt::bo& inA_bohdl, xrt::bo& inB_bohdl);
-int createKernelAndGraph(xrt::device& device, xrt::uuid& xclbin_uuid, 
-                        xrt::kernel& dma_hls_khdl, xrt::graph& gemm_aie_gr);
+int createKernel(xrt::device& device, xrt::uuid& xclbin_uuid, 
+                        xrt::kernel& dma_hls_khdl);
 
 // Launch kernel with timing measurement
 int launchKernel(xrt::kernel& dma_hls_khdl, xrt::bo& inA_bohdl, xrt::bo& inB_bohdl, xrt::bo& outC_bohdl, xrt::run& dma_hls_rhdl);

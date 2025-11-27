@@ -1,0 +1,116 @@
+===============================================================================
+AI Engine GEMM Essential Metrics
+===============================================================================
+Generated: 2025-11-18 12:50:07
+Project: GEMM 512x512x512 (int16, DIM=4, 16 cores)
+===============================================================================
+
+=== RESOURCE UTILIZATION ===
+LUTs: 9242 / 150272 (6.15%)
+BRAMs: 97 / 155 (62.58%)
+DSPs: 0 / 0 (0.00%)
+URAM: 0 / 155 (0.00%)
+CLB Registers: 22356 / 300544 (7.44%)
+
+=== TIMING PERFORMANCE ===
+WNS (Worst Negative Slack): 0.003 ns
+TNS (Total Negative Slack): 0.000 ns
+WHS (Worst Hold Slack): 0.018 ns
+THS (Total Hold Slack): 0.000 ns
+
+Clock Frequencies:
+  clk_pl_0: 100.000 MHz (Base PL Clock)
+  clkfbout_primitive: 100.000 MHz (MMCM Feedback)
+  clkout1_primitive: 156.250 MHz (PL Logic Clock)
+  clkout1_primitive_1: 312.500 MHz (AI Engine Clock)
+  bank1_clkout0: 800.000 MHz (DDR4 Memory Clock)
+  bank1_xpll0_fifo_rd_clk: 800.000 MHz (DDR4 FIFO Clock)
+  mc_clk_xpll: 800.000 MHz (Memory Controller Clock)
+  pll_clk_xpll: 3200.000 MHz (High-Speed I/O Clock)
+Clock Domain Explanation:
+  • Base PL Clock (100 MHz): Main programmable logic clock
+  • AI Engine Clock (312.5 MHz): High-speed AI Engine processing
+  • DDR4 Memory Clock (800 MHz): High-speed memory interface
+  • DDR4 PHY Clocks (3.2 GHz): Physical layer memory interface
+  • System Clock (200 MHz): System-level operations
+  • High-Speed I/O Clock (3.2 GHz): Ultra-fast data transfer
+Status: ✅ TIMING CLOSED
+
+=== POWER CONSUMPTION ===
+Total On-Chip Power: 10.293 W
+AI Engine Power: 2.433 W
+Memory Power (BRAM + NoC-DDRMC + XRAM): 2.751 W
+AI Engine Cores: 16 / 34 (47.06%)
+
+=== RUNTIME PROFILING (if available) ===
+XRT Run Summary: Not found
+Kernel Durations (top):  (none)\n 
+=== KEY INSIGHTS ===
+✅ Design meets timing requirements (WNS = 0.003 ns)
+📈 Low LUT utilization (6.15%) - room for additional functionality
+⚠️ Moderate BRAM usage (62.58%) - monitor memory requirements
+💾 No URAM usage - using BRAM for memory
+📊 Low register usage (7.44%) - efficient design
+🕐 Main clock frequency: 100.000 MHz
+⚡ Total power consumption: 10.293 W
+===============================================================================
+End of Essential Metrics
+===============================================================================
+===============================================================================
+Requested Metrics Summary (auto-extracted)
+===============================================================================
+- # MatMul kernels: 84
+- # AIE cores: 16
+- # Memory Banks (AIE tiles used): 28
+- # DMA banks (DDRMC used/avail): 1 / 1
+- # PLIOs: 26
+- Throughput (TOPS): N/A
+- Energy efficiency (TOPS/W): N/A
+- Power (W): 10.293
+- AIE core Power (W): 2.433
+- Memory Power (W) [BRAM + NoC-DDRMC + XRAM]: 2.751 W
+- PL BRAM utilization (tiles): 97 / 155 (62.58%)
+- AIE local memory capacity: 1024 KB (16 cores × 64KB)
+- AIE local memory used (from complexity.csv): 51426 KB
+- AIE local memory utilization: 5022.07%
+- AIE buffer placement: Custom (explicit MG mappings)
+- AIE kernel placement: Horizontal
+- AIE KERNEL COMPUTE CYCLES (KCC): N/A
+- KERNEL COMPUTE EFFICIENCY (KCE): N/A
+- MACs/Cyc: N/A
+- AIE kernel utilization (avg %): 100%
+- Shared Memory performance (TOPS): N/A
+- Cascade Stream Performance (TOPS): N/A
+===============================================================================
+===============================================================================
+Comprehensive Versal Metrics (from generated reports)
+===============================================================================
+AI Engine Tiles: AIE Tiles: total=72, core_tiles=1, shim_tiles=16
+AIE Kernel-like Instances: 0
+AIE Stream-like Instances: 0
+PS/CIPS Instances: 325
+APU Core-like Instances: 0
+RPU Core-like Instances: 5
+DDR/MIG Controllers: 2177
+PS Peripheral-like Instances: 0
+PL LUTs: 9242 / 150272 (6.15%)
+PL FFs: 22356 / 300544 (7.44%)
+PL BRAM: 97 / 155 (62.58%)
+Memory Power (W) [BRAM + NoC-DDRMC + XRAM]: 2.751 W
+Memory Distribution: BRAM36=84, BRAM18=26, URAM=0
+Top Interfaces by Theoretical Bandwidth (Gbps):
+  ext_platform_part_i/axi_intc_0 : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[0] : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[10] : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[1] : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[2] : 0.000 Gbps (0b @ 0.000 MHz)
+AXI Instances: 15206
+AXIS Instances: 3556
+PLIO Instances: 0
+GT Transceiver-like Instances: 0
+NoC Instances: 245
+Clock domains listed: 8
+Constraint Exceptions present (see constraints_exceptions.txt)
+Total On-Chip Power: 10.293 W
+DRC Report: 2 potential violation lines (see drc_checks.txt)
+===============================================================================

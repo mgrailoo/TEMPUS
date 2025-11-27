@@ -1,15 +1,50 @@
-<<<<<<< HEAD
-# Versal_AIE_GEMM
-=======
-# Versal AI Engine GEMM Implementation
+# Versal AI/ML Engine GEMM Implementation
 
-A comprehensive implementation of General Matrix Multiply (GEMM) operations using Xilinx AI Engine on Versal ACAP platforms. This project demonstrates high-performance matrix multiplication with configurable dimensions, data types, and optimization strategies.
+Animplementation of General Matrix Multiply (GEMM) operations using Xilinx AI/ML Engine on Versal ACAP platforms. This project demonstrates high-performance matrix multiplication with configurable dimensions, data types, and optimization strategies.
+
+## 🏗️ Architecture Support
+
+This implementation targets **AIEML (AI Engine ML)** hardware generation, which maps to AIE‑ML (v1) `__AIE_ARCH__ == 20` and thus:
+- **Enables 64-bit accumulators** (`__SUPPORTS_ACC64__`) and 32-bit accumulators (`__SUPPORTS_ACC32__`)
+- **Provides ML features including BF16 support** (`_SUPPORTS_BFLOAT16_`)
+- **Versal ACAP Platform**: Optimized for Versal edge and premium series devices
+
+For reference, on AIEML and related architectures the accumulator support is defined as:
+
+```c
+#if (__AIE_ARCH__ == 20) || (__AIE_ARCH__ == 21) || (__AIE_ARCH__ == 22) || \
+    (__AIEARCH__ == 20) || (__AIEARCH__ == 21) || (__AIEARCH__ == 22)
+#define __SUPPORTS_ACC32__
+#define __SUPPORTS_ACC64__
+#endif
+```
+
+### Data type support on AIE‑MLv1 / AIE‑MLv2
+
+- On AIE‑ML generations (ACC64/ACC32 enabled), the BF16 scalar type exists and is usable at the application boundary; however, with the DSPLIB L1/L2 `matrix_mult` we are using, native GEMM for float×float or bf16×bf16 on ACC64 is not implemented. This is why float/bf16 selections fail in compilation with “no supported modes.”
+
+- For `matrix_mult.hpp` ACC64 path (AIE‑ML, AIE‑MLv2):
+  - Supported: integer types (`int16`, `cint16`, `int32`, `cint32`).
+  - Not supported in this kernel path: floating‑point types (`float`, `cfloat`).
+
+- General rule (from DSPLIB docs for this kernel family):
+  - Integer×Integer is supported (e.g., `int16×int16`, `int32×int32`, and complex integer variants).
+  - Float×Float is supported only on older ACC48 paths (not ACC64 in this header).
+  - Mixed Integer×Float is not supported.
+
+
+### Hardware Configuration
+The `aie_primitive.json` file contains the board-specific AI Engine configuration:
+- **AI Engine Array**: 17 columns with compute tiles in row 2
+- **Memory Tiles**: Located in row 1 for data storage
+- **Shim Tiles**: Rows 0-1 for data movement between PL and AI Engine
+- **Hardware Generation**: AIEML (v1) (`__AIE_ARCH__ == 20`, ACC64/BF16 capable)
 
 ## 🚀 Features
 
 - **Multiple Matrix Sizes**: Support for 32×32 to 1024×1024 matrices
-- **Multiple Data Types**: int16, int32, and float32 support
-- **AI Engine Optimization**: Leverages Versal AI Engine array for maximum performance
+- **Multiple Data Types**: int16, and int32 support
+- **AI/ML Engine Optimization**: Leverages Versal AI/ML Engine array for maximum performance
 - **HLS Kernels**: Custom DMA kernels for efficient data movement
 - **ML Benchmarking**: Built-in PyTorch and NumPy performance comparisons
 - **Comprehensive Reporting**: Vivado utilization and power analysis
@@ -38,11 +73,6 @@ Versal_AIE_GEMM/
 │   ├── design_configs/        # Configuration files
 │   ├── system_configs/        # System configuration
 │   └── vivado_metrics_scripts/ # Vivado reporting
-├── docs/                      # Documentation
-│   ├── AIE_GEMM_Tile_Sizes_Reference.md
-│   ├── DATA_TYPE_SUPPORT_GUIDE.md
-│   ├── ML_BOARD_SETUP_GUIDE.md
-│   └── ...
 ├── scripts/                   # Utility scripts
 │   ├── setup_platform_ml.sh
 │   ├── sync_and_run.ps1
@@ -74,16 +104,36 @@ cd Versal_AIE_GEMM
 Edit `design/design_configs/config.json`:
 ```json
 {
-  "TARGET": "hw_emu",
-  "GEMM_SIZE": 1024,
+  "TARGET": "hw",
+  "GEMM_SIZE": 32,
+  "DIM": 16,
+  "_comment_DIM": "Changed from 4 to GEMM_SIZE/2 if it fits output matrix in 32kB memory",
   "DATA_TYPE": "int16",
+  "_comment_DATA_TYPE": "int32 or int16",
+  "TILE_MEM_BYTES": 32768,
   "SPLIT": 2,
   "CASC_LN": 8,
-  "ENABLE_ML_BENCHMARKS": 1
+  "ITER_CNT": 1,
+  "N_SAMPLES": 1,
+  "GEMM_INSTS": 1,
+  "EN_TRACE": 0,
+  "PL_FREQ": 312.5,
+  "ENABLE_ML_BENCHMARKS": 1,
+  "WRD_LN": 8,
+  "_comment_WRD_LN": "8 for int16 and 4 for int32 elements per 128-bit PLIO",
+  "SUB_TILE_M": 4,
+  "SUB_TILE_K": 4,
+  "SUB_TILE_N": 4,
+  "_comment_SUB_TILE_N": "2 for int32 and 4 for int16",
+  "GRAPH_ITER_CNT": 2,
+  "_comment_GRAPH_ITER_CNT": "Calculated automatically based on DIM and GEMM_SIZE"
 }
 ```
 
 ### 3. Build and Run
+For having the pytorch matmult result on the board, run ./setup_ml_environment.sh --offline before running gemm_aie_xrt.elf ...
+
+
 ```bash
 # Build for hardware emulation
 make run
@@ -93,30 +143,18 @@ make run TARGET=hw
 
 # Generate reports
 make report_metrics
-
-# Run with ML benchmarking
-make run ENABLE_ML_BENCHMARKS=1
 ```
-
-## 📊 Performance Results
-
-| Matrix Size | Data Type | AI Engine Time | PyTorch CPU | Speedup |
-|-------------|-----------|----------------|-------------|---------|
-| 32×32       | int16     | ~0.1ms        | ~0.5ms      | 5x      |
-| 256×256     | int16     | ~2.5ms        | ~15ms       | 6x      |
-| 1024×1024   | int16     | ~45ms         | ~280ms      | 6.2x    |
 
 ## 🔧 Configuration Options
 
 ### Matrix Dimensions
 - **GEMM_SIZE**: 32, 64, 128, 256, 512, 1024
-- **SPLIT**: Number of AI Engine splits (1-8)
-- **CASC_LN**: Cascade levels (1-16)
+- **SPLIT**: Number of AI Engine splits (2)
+- **CASC_LN**: Cascade levels (8)
 
 ### Data Types
 - **int16**: 16-bit integer (best performance)
 - **int32**: 32-bit integer (higher precision)
-- **float**: 32-bit floating point
 
 ### Build Targets
 - **hw_emu**: Hardware emulation (faster iteration)
@@ -136,8 +174,7 @@ make application             # Build host application only
 # Analysis targets
 make report_metrics          # Generate Vivado reports
 make vcd                     # Generate VCD and XPE files
-make pytorch_benchmark       # Run PyTorch comparison
-make numpy_benchmark         # Run NumPy comparison
+
 
 # Cleanup targets
 make clean_tgt              # Clean specific target
@@ -162,12 +199,6 @@ make run TARGET=hw
 # Run on actual hardware
 ```
 
-## 📚 Documentation
-
-- **[AI Engine Architecture Guide](docs/versal_acap_ai_engine_programming_cheat_sheet.md)**
-- **[Data Type Support](docs/DATA_TYPE_SUPPORT_GUIDE.md)**
-- **[ML Setup Guide](docs/ML_BOARD_SETUP_GUIDE.md)**
-- **[Tile Sizes Reference](docs/AIE_GEMM_Tile_Sizes_Reference.md)**
 
 ## 🤝 Contributing
 
@@ -191,10 +222,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 For questions and support:
 - Create an issue in this repository
-- Check the documentation in `docs/`
-- Review the example configurations in `examples/`
 
----
 
-**Built with ❤️ for high-performance AI/ML acceleration on Versal ACAP**
->>>>>>> master
+**Built for high-performance AI/ML acceleration on Versal ACAP**

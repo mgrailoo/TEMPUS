@@ -1,0 +1,193 @@
+===============================================================================
+AI Engine GEMM Essential Metrics
+===============================================================================
+Generated: 2025-11-17 15:35:28
+Project: GEMM 32x32x32 (int32, DIM=16, 16 cores)
+===============================================================================
+
+=== RESOURCE UTILIZATION ===
+LUTs: 9166 / 150272 (6.10%)
+BRAMs: 97 / 155 (62.58%)
+DSPs: 0 / 0 (0.00%)
+URAM: URAM / 0 (155%)
+CLB Registers: RegisterasFlipFlop / 0 (300544%)
+
+=== DETAILED RESOURCE BREAKDOWN ===
+CLB Slices: 2995 / 18784 (15.94%)
+LUT Distribution:
+  ├── Logic LUTs: 8244
+  └── Memory LUTs: 922
+Memory Distribution:
+  ├── BRAM36E5: 84 blocks
+  ├── BRAM18E5: 26 blocks
+  ├── URAM: 0 blocks
+  └── XRAM: 1 / 1
+
+=== TIMING PERFORMANCE ===
+WNS (Worst Negative Slack): 0.007 ns
+TNS (Total Negative Slack): 0.000 ns
+WHS (Worst Hold Slack): 0.013 ns
+THS (Total Hold Slack): 0.000 ns
+
+Clock Frequencies:
+  clk_pl_0: 100.000 MHz (Base PL Clock)
+  clkfbout_primitive: 100.000 MHz (MMCM Feedback)
+  clkout1_primitive: 156.250 MHz (PL Logic Clock)
+  clkout1_primitive_1: 312.500 MHz (AI Engine Clock)
+  bank1_clkout0: 800.000 MHz (DDR4 Memory Clock)
+  bank1_xpll0_fifo_rd_clk: 800.000 MHz (DDR4 FIFO Clock)
+  mc_clk_xpll: 800.000 MHz (Memory Controller Clock)
+  pll_clk_xpll: 3200.000 MHz (High-Speed I/O Clock)
+Clock Domain Explanation:
+  • Base PL Clock (100 MHz): Main programmable logic clock
+  • AI Engine Clock (312.5 MHz): High-speed AI Engine processing
+  • DDR4 Memory Clock (800 MHz): High-speed memory interface
+  • DDR4 PHY Clocks (3.2 GHz): Physical layer memory interface
+  • System Clock (200 MHz): System-level operations
+  • anydesk (3.2 GHz): Ultra-fast data transfer
+
+Status: ✅ TIMING CLOSED
+
+=== POWER CONSUMPTION ===
+Total On-Chip Power: 10.696 W
+AI Engine Power: 2.403 W
+Memory Power (W) [BRAM + NoC-DDRMC + XRAM]: 3.157 W
+AI Engine Cores: 16 / 34 (47.06%)
+
+=== KEY INSIGHTS ===
+✅ Design meets timing requirements (WNS = 0.007 ns)
+📈 Low LUT utilization (6.10%) - room for additional functionality
+⚠️ Moderate BRAM usage (62.58%) - monitor memory requirements
+🕐 Main clock frequency: 100.000 MHz
+⚡ Total power consumption: 10.696 W
+
+===============================================================================
+End of Essential Metrics
+===============================================================================
+=== NoC & INTERCONNECT ANALYSIS ===
+NoC Instances: 245
+Interconnect Load: Medium (estimated)
+Memory Bandwidth Utilization: Active DDR4 + NoC traffic
+
+=== DEVICE UTILIZATION SUMMARY ===
+Processing System (PS9): 1 / 1 (100%)
+DDR Memory Controllers: 1 / 1 (100%)
+AI Engine Tiles Used: 16 / 34 (47.06%)
+High-Speed Transceivers: 0 / 2 (0%)
+
+=== STREAM INTERFACE ANALYSIS ===
+PL Streams (from AI Engine): 52
+PLIOs (Physical Level I/O): N/A
+Stream Interface Relationship:
+  • PL Streams (52): Total AI Engine to PL data streams
+  • PLIOs (N/A): Physical stream buffers (A: 8, B: 16 channels)
+  • Stream Ratio: N/A streams per PLIO
+  • Data Flow: AI Engine → PL Streams → PLIO Buffers → DMA → DDR4
+
+=== PERFORMANCE CHARACTERISTICS ===
+DMA Performance Summary:
+  • Clock Frequency: N/A (timing slack: N/A ns)
+  • DMA Latency: 142 cycles (0.454 μs)
+  • Pipeline Type: Dataflow with auto-rewind loops
+Estimated Memory Bandwidth: N/A
+Compute Workload Type: N/A
+Data Movement Pattern: N/A
+Parallelization: 16 AI Engine cores with cascade connections
+
+=== HLS DMA UTILIZATION SUMMARY ===
+DMA HLS Resource Usage:
+  • BRAM_18K: 73 (23% utilization)
+  • DSP Slices: 0 (0% utilization)
+  • Flip Flops: 5716 (1% utilization)
+  • LUTs: 6313 (4% utilization)
+  • URAM: 0 (0% utilization)
+
+DMA Loop Performance:
+  • Loop performance data: N/A (HLS synthesis report not found)
+  • Pipeline: Auto-rewind with dataflow optimization
+
+=== DESIGN EFFICIENCY METRICS ===
+Resource Efficiency: Moderate
+Power Distribution: 22.47% AI Engine power ratio
+Timing Margin: 0.007 ns slack
+Memory Hierarchy: BRAM + DDR4 (HLS DMA: 73 BRAM_18K)
+
+===============================================================================
+End of Essential Metrics
+===============================================================================
+===============================================================================
+Requested Metrics Summary (auto-extracted)
+===============================================================================
+- # MatMul kernels: N/A
+- # AIE cores: N/A
+- # Memory Banks (AIE tiles used): N/A
+- # DMA banks (DDRMC used/avail): N/A
+- # PLIOs: N/A
+- # PL Streams: 52
+- Throughput (TOPS): N/A
+- Energy efficiency (TOPS/W): N/A
+- Power (W): 10.696
+- AIE core Power (W): 2.403
+- Memory Power (W) [BRAM + NoC-DDRMC + XRAM]: 3.157 W
+- PL BRAM utilization (tiles): 97 / 155 (62.58%)
+- AIE local memory capacity: N/A KB (N/A cores × 64KB)
+- AIE local memory used (from complexity.csv): N/A KB
+- AIE local memory utilization: N/A%
+- AIE buffer placement: Custom (explicit MG mappings)
+- AIE kernel placement: Horizontal
+- AIE KERNEL COMPUTE CYCLES (KCC): N/A
+- KERNEL COMPUTE EFFICIENCY (KCE): N/A
+- MACs/Cyc: N/A
+- AIE kernel utilization (avg %): N/A%
+- Shared Memory performance (TOPS): N/A
+- Cascade Stream Performance (TOPS): N/A
+===============================================================================
+
+===============================================================================
+HLS DMA Timing Summary (from synthesis report)
+===============================================================================
+Timing Table (ap_clk):
+    |  Clock |  Target | Estimated| Uncertainty|
+    +--------+---------+----------+------------+
+    |ap_clk  |  3.19 ns|  2.332 ns|     0.86 ns|
+    +--------+---------+----------+------------+
+
+Pipeline Performance:
+  • Total Latency: 142 cycles (0.454 μs)
+  • Pipeline Type: Dataflow with auto-rewind loops
+  • Throughput: 128 cycles interval
+
+Loop Initiation Intervals (II):
+===============================================================================
+
+===============================================================================
+Comprehensive Versal Metrics (from generated reports)
+===============================================================================
+AIE Tiles: total=72, core_tiles=1, shim_tiles=16
+AIE Kernel-like Instances: 0
+AIE Stream-like Instances: 0
+PS/CIPS Instances: 325
+APU Core-like Instances: 0
+RPU Core-like Instances: 5
+DDR/MIG Controllers: 2177
+PS Peripheral-like Instances: 0
+PL LUTs: 9166 / 150272 (6.10%)
+PL FFs: RegisterasFlipFlop / 0 (300544%)
+PL BRAM: 97 / 155 (62.58%)
+Memory Distribution: BRAM36=84, BRAM18=26, URAM=0
+Top Interfaces by Theoretical Bandwidth (Gbps):
+  ext_platform_part_i/axi_intc_0 : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[10] : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[1] : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[2] : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[3] : 0.000 Gbps (0b @ 0.000 MHz)
+AXI Instances: 15213
+AXIS Instances: 3552
+PLIO Instances: 0
+GT Transceiver-like Instances: 0
+NoC Instances: 245
+Clock domains listed: 8
+Constraint Exceptions present (see constraints_exceptions.txt)
+Total On-Chip Power: 10.696 W
+DRC Report: 2 potential violation lines (see drc_checks.txt)
+===============================================================================

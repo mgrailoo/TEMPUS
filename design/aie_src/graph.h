@@ -177,7 +177,7 @@ class GeMM: public adf::graph
             for(int k = 0; k < CASC_LN; ++k) {
                // Set runtime ratio for performance optimization
                // 0.9 ratio allows for 10% margin in timing closure
-               adf::runtime<ratio>(mmult_kernels[k]) = 0.9;
+               adf::runtime<ratio>(mmult_kernels[k]) = 1.0;
                
                // Connect Matrix A input (broadcast to all splits)
                adf::connect<>(matA_inp[k].out[0], mmult[i].inA[k]);
@@ -192,7 +192,9 @@ class GeMM: public adf::graph
          
          // Optional: AI Engine tile placement constraint (commented out)
          // Uncomment to specify exact tile placement for timing optimization
-         // location<graph>(*this) = area_group({{aie_tile, 12, 0, 12+CASC_LN, SPLIT}});
+         // location<graph>(*this) = area_group({{aie_tile, 0, 0, SPLIT, CASC_LN}});
+         // Place GEMM splits in a compact 2x16 block for best timing
+         //location<graph>(*this) = area_group({{aie_tile, 0, 0, 2, 16}}); if SPLIT is 4, you need 2x16 blocks
       }
 };
 

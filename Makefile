@@ -58,10 +58,11 @@ print-%  : ; @echo $* = $($*)
 # ============================================================================
 # ENVIRONMENT CONFIGURATION
 # ============================================================================
-DSPLIB_VITIS ?= /home/mgrailoo/Vitis_Libraries
+# DSPLIB_VITIS ?= /home/mgrailoo/Vitis_Libraries
 DSPLIB_ROOT = $(DSPLIB_VITIS)/dsp
-PLATFORM ?= /media/josnu02/large_SDD/mgrailoo/platform_edge_hwemu/platform_edge_hwemu/export/platform_edge_hwemu/platform_edge_hwemu.xpfm
-COMMON_IMAGE_VERSAL ?= /home/mgrailoo/xilinx-versal-common-v2024.1
+# PLATFORM ?= /media/josnu02/large_SDD/mgrailoo/platform_edge_hwemu/platform_edge_hwemu/export/platform_edge_hwemu/platform_edge_hwemu.xpfm
+PLATFORM ?= /home/mahdieh/data/AIE_Versal/9-10-2025/ssh_workflow/platform_edge_hwemu/platform_edge_hwemu/export/platform_edge_hwemu/platform_edge_hwemu.xpfm
+# COMMON_IMAGE_VERSAL ?= /home/mgrailoo/xilinx-versal-common-v2024.1
 
 # ============================================================================
 # CONFIGURATION PARSING
@@ -75,7 +76,7 @@ DIM := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).g
 SPLIT := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('SPLIT',2))")
 CASC_LN := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('CASC_LN',8))")
 GEMM_INSTS := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('GEMM_INSTS',1))")
-PL_FREQ := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('PL_FREQ',312.5))")
+PL_FREQ := $(shell python3 -c "import json;v=json.load(open('$(CONFIG_JSON)')).get('PL_FREQ','312.5'); print(str(v).replace('.','_') if isinstance(v,(int,float)) else v)")
 ITER_CNT := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('ITER_CNT',1))")
 EN_TRACE := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('EN_TRACE',0))")
 # ENABLE_ML_BENCHMARKS removed - ML setup done at runtime
@@ -99,7 +100,7 @@ DIM_B := $(shell if [ $(DIM) -lt $(GEMM_SZ_CASC) ]; then echo $(DIM); else echo 
 MAT_DIMS := $(GEMM_SIZE)x$(GEMM_SIZE)x$(GEMM_SIZE)
 TARGET_UPPER := $(shell echo $(TARGET) | tr a-z A-Z)
 HZ_UNIT := 1000000
-VPP_CLOCK_FREQ := $(shell printf "%.0f" `echo "${PL_FREQ} * $(HZ_UNIT)" | bc`)
+VPP_CLOCK_FREQ := $(shell echo "$(shell echo $(PL_FREQ) | tr '_' '.') * $(HZ_UNIT)" | bc | cut -d'.' -f1)
 LAUNCH_HW_EMU_EXEC := 0
 
 # Graph iteration count
@@ -125,6 +126,7 @@ PROFILING_CONFIGS_REPO := $(DESIGN_REPO)/profiling_configs
 EXEC_SCRIPTS_REPO := $(DESIGN_REPO)/exec_scripts
 VIVADO_METRICS_SCRIPTS_REPO := $(DESIGN_REPO)/vivado_metrics_scripts
 DIRECTIVES_REPO := $(DESIGN_REPO)/directives
+ML_WHEELS_DIR := $(DESIGN_REPO)/ml_wheels
 
 # Build directories
 BASE_BLD_DIR := $(PROJECT_REPO)/build
@@ -133,7 +135,7 @@ INSTS_BLD_DIR := $(GEMM_BLD_DIR)/x$(GEMM_INSTS)
 BUILD_TARGET_DIR := $(INSTS_BLD_DIR)/$(TARGET)
 
 # Report directories
-REPORTS_REPO := $(PROJECT_REPO)/reports_dir
+REPORTS_REPO := $(PROJECT_REPO)/reports
 BLD_REPORTS_DIR := $(REPORTS_REPO)/gemm_$(MAT_DIMS)/x$(GEMM_INSTS)
 XPE_REPO := $(PROJECT_REPO)/xpe_dir
 BLD_XPE_DIR := $(XPE_REPO)/gemm_$(MAT_DIMS)/x$(GEMM_INSTS)/$(TARGET)
@@ -244,13 +246,14 @@ APP_SRC_CPP := $(HOST_APP_SRC)/gemm_aie_app.cpp $(HOST_APP_SRC)/gemm_utils.cpp
 AIE_CONTROL_CPP := $(BUILD_TARGET_DIR)/$(WORK_DIR)/ps/c_rts/aie_control_xrt.cpp
 
 # Hardware targets
-XSA := vck190_aie_gemm.$(TARGET).xsa
+XSA := ve2302_aie_gemm.$(TARGET).xsa
 
 # ============================================================================
 # AI ENGINE COMPILER FLAGS
 # ============================================================================
 AIE_FLAGS := -include=$(AIE_SRC_REPO)
 AIE_FLAGS += -include=$(DESIGN_REPO)/design_configs
+AIE_FLAGS += -include=$(PROJECT_REPO)
 AIE_FLAGS += -include=$(DSPLIB_ROOT)/L1/include/aie
 AIE_FLAGS += -include=$(DSPLIB_ROOT)/L1/src/aie
 AIE_FLAGS += -include=$(DSPLIB_ROOT)/L1/tests/aie/inc
@@ -268,7 +271,7 @@ AIE_FLAGS += --Xpreproc="-DDIM_B=$(DIM_B)"
 AIE_FLAGS += --Xpreproc="-DDATA_TYPE=$(DATA_TYPE)"
 AIE_FLAGS += --platform=$(PLATFORM)
 AIE_FLAGS += --log-level=5
-AIE_FLAGS += --pl-freq=$(PL_FREQ)
+AIE_FLAGS += --pl-freq=$(shell echo $(PL_FREQ) | tr '_' '.')
 AIE_FLAGS += --Xmapper=BufferOptLevel9
 AIE_FLAGS += --Xrouter=DMAFIFOsInFreeBankOnly
 AIE_FLAGS += --workdir=$(WORK_DIR)
@@ -290,12 +293,12 @@ GCC_FLAGS += -DITER_CNT=$(ITER_CNT) -DDATA_TYPE=$(DATA_TYPE)
 # Host application include paths
 GCC_INC_FLAGS := -I$(SDKTARGETSYSROOT)/usr/include/xrt -I$(XILINX_VITIS)/aietools/include/
 GCC_INC_FLAGS += -I$(SDKTARGETSYSROOT)/usr/include -I$(SDKTARGETSYSROOT)/usr/lib
-GCC_INC_FLAGS += -I$(AIE_SRC_REPO) -I$(HOST_APP_SRC) -I$(DESIGN_REPO)/design_configs
+GCC_INC_FLAGS += -I$(AIE_SRC_REPO) -I$(HOST_APP_SRC) -I$(DESIGN_REPO)/design_configs -I$(PROJECT_REPO)
 GCC_INC_FLAGS += -I$(DSPLIB_ROOT)/L1/include/aie -I$(DSPLIB_ROOT)/L1/src/aie
 GCC_INC_FLAGS += -I$(DSPLIB_ROOT)/L1/tests/aie/inc -I$(DSPLIB_ROOT)/L1/tests/aie/src
 GCC_INC_FLAGS += -I$(DSPLIB_ROOT)/L2/include/aie -I$(DSPLIB_ROOT)/L2/tests/aie/common/inc
 GCC_INC_FLAGS += -I$(XILINX_XRT)/include -I$(XILINX_VITIS)/include
-GCC_INC_FLAGS += -I/opt/Xilinx/Vitis_HLS/2024.1/include/ -I$(PL_SRC_REPO)
+GCC_INC_FLAGS += -I$(XILINX_HLS)/include/ -I$(PL_SRC_REPO)
 GCC_INC_FLAGS += -I$(SDKTARGETSYSROOT)/usr/include/eigen3
 
 # Host application library paths and libraries
@@ -354,7 +357,12 @@ PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/setup_ml_environment.sh
 PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/RUNTIME_ML_SETUP_GUIDE.md
 PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/README_RUNTIME_ML.md
 PKG_FLAGS += --package.sd_file $(HOST_APP_SRC)/pytorch_benchmark.py
-PKG_FLAGS += --package.sd_file $(HOST_APP_SRC)/numpy_benchmark.py
+# PKG_FLAGS += --package.sd_file $(HOST_APP_SRC)/numpy_benchmark.py
+
+# Include local PyTorch wheel cache in the SD card payload if it exists
+ifneq ($(wildcard $(ML_WHEELS_DIR)),)
+PKG_FLAGS += --package.sd_dir $(ML_WHEELS_DIR)
+endif
 
 # Profiling and XRT flags
 ifeq ($(EN_TRACE),1)
@@ -386,6 +394,7 @@ kernels: $(KERNEL_XOS)
 $(BUILD_TARGET_DIR)/$(DATAMOVER_KERNEL_XO).xo: $(PL_SRC_REPO)/dma_hls* $(GEMM_CONFIG_HDR)
 	mkdir -p $(BUILD_TARGET_DIR); \
 	cd "$(BUILD_TARGET_DIR)"; \
+	XILINX_TCLSTORE_PATH="/home/mahdieh/data/tools/Xilinx/Vivado/2024.1/data/XilinxTclStore" \
 	v++ --target $(TARGET) $(DATAMOVER_KERNEL_VPP_FLAGS) \
 		$(VPP_FLAGS) -c -k $(DATAMOVER_KERNEL_TOP) \
 		$(DATAMOVER_KERNEL_SRC) -o $@
@@ -524,6 +533,7 @@ $(BLD_TGT_VCD_FILE): $(AIE_SRC_REPO)/aiesim_data/*
 #	vck190_aie_gemm.[hw_emu | hw].xsa.link_summary
 #	vck190_aie_gemm.[hw_emu | hw].xsa
 #	vck190_aie_gemm.[hw_emu | hw].log
+# 
 xsa:  kernels graph $(BUILD_TARGET_DIR)/$(XSA)
 
 $(BUILD_TARGET_DIR)/$(XSA):$(KERNEL_XOS) $(SYSTEM_CONFIGS_REPO)/*
@@ -806,7 +816,7 @@ run: sd_card run_emu # I added create_ioFiles, origin run did not have it
 
 # PyTorch benchmarking removed - use setup_ml_environment.sh at runtime
 
-all: run report_metrics # vcd
+all: run report_metrics # vcd aiesim_profile 
 
 clean_tgt:
 	@echo "Cleaning $(TARGET) Target Build Dir..."

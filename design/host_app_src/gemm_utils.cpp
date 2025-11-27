@@ -15,18 +15,34 @@ SPDX-License-Identifier: MIT
 // TIMING AND DURATION FUNCTIONS
 // ============================================================================
 
-// Function to print elapsed time since start
-void printElapsedTime(const std::chrono::high_resolution_clock::time_point& start, const char* stage) {
-    auto now = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - start).count();
-    printf("[%20lld us] %s\n", static_cast<long long>(elapsed), stage);
+using HighResClock = std::chrono::high_resolution_clock;
+
+// Returns elapsed microseconds since the provided start time
+long long getElapsedMicroseconds(const HighResClock::time_point& start) {
+    return std::chrono::duration_cast<std::chrono::microseconds>(HighResClock::now() - start).count();
 }
 
-// Print duration since t0 with a label (microseconds)
-void printDurationSince(const std::chrono::high_resolution_clock::time_point& t0, const char* label) {
-    auto now = std::chrono::high_resolution_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - t0).count();
-    printf("[%20lld us] %s\n", static_cast<long long>(elapsed), label);
+// Print a duration in both microseconds and milliseconds with a stage label
+void printDurationUsMs(long long elapsed_us, const char* stage) {
+    double elapsed_ms = static_cast<double>(elapsed_us) / 1000.0;
+    printf("[%14lld us | %8.3f ms] %s\n", elapsed_us, elapsed_ms, stage);
+}
+
+// Helper that prints elapsed time since start and returns the duration in microseconds
+long long logElapsedTime(const HighResClock::time_point& start, const char* stage) {
+    long long elapsed_us = getElapsedMicroseconds(start);
+    printDurationUsMs(elapsed_us, stage);
+    return elapsed_us;
+}
+
+// Function to print elapsed time since start
+void printElapsedTime(const HighResClock::time_point& start, const char* stage) {
+    printDurationUsMs(getElapsedMicroseconds(start), stage);
+}
+
+// Print duration since t0 with a label
+void printDurationSince(const HighResClock::time_point& t0, const char* label) {
+    printDurationUsMs(getElapsedMicroseconds(t0), label);
 }
 
 // ============================================================================
@@ -143,9 +159,9 @@ int allocateHostMemory(std::vector<ap_int<128>, aligned_allocator<ap_int<128>>>&
         host_mem_C.resize(exact_matc_sz);  // Allocate exact number of elements
 
         printf("Host memory allocated successfully\n");
-        printf("Matrix A: %zu elements (%zu bytes)\n", host_mem_A.size(), host_mem_A.size() * sizeof(ap_int<128>));
-        printf("Matrix B: %zu elements (%zu bytes)\n", host_mem_B.size(), host_mem_B.size() * sizeof(ap_int<128>));
-        printf("Matrix C: %zu elements (%zu bytes)\n", host_mem_C.size(), host_mem_C.size() * sizeof(ap_int<128>));
+        // printf("Matrix A: %zu elements (%zu bytes)\n", host_mem_A.size(), host_mem_A.size() * sizeof(ap_int<128>));
+        // printf("Matrix B: %zu elements (%zu bytes)\n", host_mem_B.size(), host_mem_B.size() * sizeof(ap_int<128>));
+        // printf("Matrix C: %zu elements (%zu bytes)\n", host_mem_C.size(), host_mem_C.size() * sizeof(ap_int<128>));
 
         // Verify that exact sizes are <= aligned sizes
         if (exact_mata_sz * sizeof(ap_int<128>) > ALIGNED_MATA_BYTES) {
@@ -467,8 +483,8 @@ int transferDataToDevice(const std::vector<ap_int<128>, aligned_allocator<ap_int
 }
 
 // Create kernel and graph objects
-int createKernelAndGraph(xrt::device& device, xrt::uuid& xclbin_uuid, 
-                        xrt::kernel& dma_hls_khdl, xrt::graph& gemm_aie_gr) {
+int createKernel(xrt::device& device, xrt::uuid& xclbin_uuid, 
+                        xrt::kernel& dma_hls_khdl) {
     printf("Creating kernel object with optimized settings...\n");
     
     // Create DMA kernel
@@ -477,8 +493,7 @@ int createKernelAndGraph(xrt::device& device, xrt::uuid& xclbin_uuid,
     printf("DMA kernel created successfully\n");
     printDurationSince(t_kernel_create, "Kernel create (dma_hls)");
 
-    // Graph is already created in main, just verify it's valid
-    printf("Graph object already created and ready\n");
+
     
     return EXIT_SUCCESS;
 }
@@ -514,13 +529,7 @@ int executeComputation(xrt::graph& gemm_aie_gr, xrt::run& dma_hls_rhdl,
     printf("DMA kernel execution completed successfully\n");
     printElapsedTime(dma_wait_time, "DMA kernel wait");
     
-    // Sync output buffer from device
-    auto buffer_sync_time = std::chrono::high_resolution_clock::now();
-    printf("Syncing output buffer with optimized transfer: %d , %d\n", 
-            (int16_t)outC_bomapped[0], (int16_t)outC_bomapped[1]);
-    outC_bohdl.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-    printf("Output buffer synced successfully\n");
-    printElapsedTime(buffer_sync_time, "Buffer sync");
+
     
     return EXIT_SUCCESS;
 }

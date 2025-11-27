@@ -23,70 +23,49 @@ import sys
 import argparse
 from pathlib import Path
 
-# Import with error handling to avoid NumPy compatibility issues
-try:
-    import numpy as np
-except ImportError as e:
-    print(f"Error loading matrix_A_input.txt: Numpy is not available")
-    print(f"Error loading matrix_B_input.txt: Numpy is not available")
-    print("Failed to load input matrices")
-    sys.exit(1)
-
+# Import PyTorch only (no NumPy to avoid version conflicts)
 try:
     import torch
+    print("✓ PyTorch loaded successfully")
 except ImportError as e:
     print(f"Error: PyTorch is not available: {e}")
+    print("Install PyTorch with: pip3 install torch --index-url https://download.pytorch.org/whl/cpu")
     sys.exit(1)
 
 def load_matrix_from_file(filename, dtype, shape):
-    """Load matrix from text file with proper data type conversion."""
+    """Load matrix from text file using pure PyTorch (no NumPy dependencies)."""
     try:
+        print(f"Loading {filename} as {dtype} with shape {shape}")
+        
         # Read text file and parse values
         with open(filename, 'r') as f:
             content = f.read().strip()
         
         # Split by whitespace and convert to numbers
         values = content.split()
+        print(f"Read {len(values)} values from {filename}")
         
-        # Convert to numpy array based on data type
+        # Convert directly to PyTorch tensors (avoiding NumPy)
         if dtype == 'int16':
-            data = np.array([int(x) for x in values], dtype=np.int16)
+            data_list = [int(x) for x in values]
+            tensor = torch.tensor(data_list, dtype=torch.int16)
         elif dtype == 'int32':
-            data = np.array([int(x) for x in values], dtype=np.int32)
+            data_list = [int(x) for x in values]
+            tensor = torch.tensor(data_list, dtype=torch.int32)
         elif dtype == 'float32':
-            data = np.array([float(x) for x in values], dtype=np.float32)
+            data_list = [float(x) for x in values]
+            tensor = torch.tensor(data_list, dtype=torch.float32)
         else:
             raise ValueError(f"Unsupported data type: {dtype}")
         
         # Reshape to matrix dimensions
-        matrix = data.reshape(shape)
-        return torch.from_numpy(matrix)
+        matrix = tensor.reshape(shape)
+        print(f"Successfully loaded matrix with shape {matrix.shape}")
+        return matrix
         
     except Exception as e:
         print(f"Error loading {filename}: {e}")
-        # Fallback: try to load without numpy if there's a compatibility issue
-        try:
-            with open(filename, 'r') as f:
-                content = f.read().strip()
-            values = content.split()
-            
-            # Convert directly to Python lists and then to PyTorch tensors
-            if dtype == 'int16':
-                data_list = [int(x) for x in values]
-                tensor = torch.tensor(data_list, dtype=torch.int16)
-            elif dtype == 'int32':
-                data_list = [int(x) for x in values]
-                tensor = torch.tensor(data_list, dtype=torch.int32)
-            elif dtype == 'float32':
-                data_list = [float(x) for x in values]
-                tensor = torch.tensor(data_list, dtype=torch.float32)
-            else:
-                raise ValueError(f"Unsupported data type: {dtype}")
-            
-            return tensor.reshape(shape)
-        except Exception as e2:
-            print(f"Fallback loading also failed for {filename}: {e2}")
-            return None
+        return None
 
 def benchmark_pytorch_matmul(matrix_a, matrix_b, device='cpu', iterations=10):
     """Benchmark PyTorch matrix multiplication with timing analysis."""
@@ -116,20 +95,12 @@ def benchmark_pytorch_matmul(matrix_a, matrix_b, device='cpu', iterations=10):
         end_time = time.perf_counter()
         times.append(end_time - start_time)
     
-    # Calculate statistics (with fallback for NumPy compatibility)
-    try:
-        times = np.array(times)
-        mean_time = np.mean(times)
-        std_time = np.std(times)
-        min_time = np.min(times)
-        max_time = np.max(times)
-    except:
-        # Fallback calculation without NumPy
-        mean_time = sum(times) / len(times)
-        variance = sum((x - mean_time) ** 2 for x in times) / len(times)
-        std_time = variance ** 0.5
-        min_time = min(times)
-        max_time = max(times)
+    # Calculate statistics using pure Python (no NumPy)
+    mean_time = sum(times) / len(times)
+    variance = sum((x - mean_time) ** 2 for x in times) / len(times)
+    std_time = variance ** 0.5
+    min_time = min(times)
+    max_time = max(times)
     
     return result, mean_time, std_time, min_time, max_time
 
@@ -149,10 +120,32 @@ def print_timing_results(device, mean_time, std_time, min_time, max_time, matrix
     print(f"[{min_time_us:20.0f} us] Min Time:  {min_time*1000:.3f} ms")
     print(f"[{max_time_us:20.0f} us] Max Time:  {max_time*1000:.3f} ms")
     
-    # Calculate FLOPS for matrix multiplication: 2 * size^3
-    flops = 2 * matrix_size * matrix_size * matrix_size
-    throughput_gflops = flops / (mean_time * 1e9)
-    print(f"[{mean_time_us:20.0f} us] Throughput: {throughput_gflops:.2f} GFLOPS")
+    # Each output element performs matrix_size multiply-add pairs (2 scalar ops)
+    mac_ops = 2 * matrix_size * matrix_size * matrix_size
+    mac_count = mac_ops // 2
+    ops_per_second = mac_ops / mean_time if mean_time > 0 else 0
+    macs_per_second = ops_per_second / 2
+    if ops_per_second >= 1e12:
+        throughput = ops_per_second / 1e12
+        unit = "TOPS"
+    elif ops_per_second >= 1e9:
+        throughput = ops_per_second / 1e9
+        unit = "GOPS"
+    else:
+        throughput = ops_per_second / 1e6
+        unit = "MOPS"
+    print(f"[{mean_time_us:20.0f} us] MAC Count: {mac_count:,}")
+    print(f"[{mean_time_us:20.0f} us] Throughput: {throughput:.2f} {unit} (OPS/s)")
+    if macs_per_second >= 1e12:
+        mac_throughput = macs_per_second / 1e12
+        mac_unit = "TMAC/s"
+    elif macs_per_second >= 1e9:
+        mac_throughput = macs_per_second / 1e9
+        mac_unit = "GMAC/s"
+    else:
+        mac_throughput = macs_per_second / 1e6
+        mac_unit = "MMAC/s"
+    print(f"[{mean_time_us:20.0f} us] Throughput: {mac_throughput:.2f} {mac_unit} )")
 
 def read_config():
     """Read configuration from config.json file"""
@@ -173,24 +166,22 @@ def read_config():
 
 def main():
     # Read config first
-    config = read_config()
+    # config = read_config()
     
     parser = argparse.ArgumentParser(description='PyTorch GEMM Benchmark')
     parser.add_argument('matrix_a', help='Matrix A input file')
     parser.add_argument('matrix_b', help='Matrix B input file')
     parser.add_argument('output', help='Output file for results')
-    parser.add_argument('--size', type=int, default=config.get('GEMM_SIZE', 32), 
-                       help='Matrix size (default: from config.json)')
-    parser.add_argument('--dtype', choices=['int16', 'int32', 'float32'], 
-                       default=config.get('DATA_TYPE', 'int16'), 
-                       help='Data type (default: from config.json)')
+    parser.add_argument('--size', type=int, default=32,
+                       help='Matrix size (default: 32)')
+    parser.add_argument('--dtype', choices=['int16' , 'int32', 'float32'])
     parser.add_argument('--device', choices=['cpu'], default='cpu',
                        help='Device to use (cpu only)')
     parser.add_argument('--iterations', type=int, default=10,
                        help='Number of benchmark iterations (default: 10)')
-    parser.add_argument('--target', default=config.get('TARGET', 'hw'), 
-                       help='AI Engine target for comparison (default: from config.json)')
-    
+    parser.add_argument('--target', default='hw',
+                       help='AI Engine target for comparison (default: hw)')
+
     args = parser.parse_args()
     
     # CPU-only execution (GPU not available on this board)
@@ -244,22 +235,42 @@ def main():
     
     # Print summary in host application format
     print(f"\n=== PYTORCH {args.device.upper()} SUMMARY ===")
+    summary_ops = 2 * args.size**3
+    summary_mac_count = summary_ops // 2
+    summary_ops_per_second = summary_ops / mean_time if mean_time > 0 else 0
+    summary_macs_per_second = summary_ops_per_second / 2
+    if summary_ops_per_second >= 1e12:
+        summary_throughput = summary_ops_per_second / 1e12
+        summary_unit = "TOPS"
+    elif summary_ops_per_second >= 1e9:
+        summary_throughput = summary_ops_per_second / 1e9
+        summary_unit = "GOPS"
+    else:
+        summary_throughput = summary_ops_per_second / 1e6
+        summary_unit = "MOPS"
     print(f"[{mean_time*1e6:20.0f} us] PyTorch {args.device.upper()} GEMM ({args.size}x{args.size})")
-    print(f"[{mean_time*1e6:20.0f} us] Throughput: {2 * args.size**3 / (mean_time * 1e9):.2f} GFLOPS")
+    print(f"[{mean_time*1e6:20.0f} us] MAC Count: {summary_mac_count:,}")
+    print(f"[{mean_time*1e6:20.0f} us] Throughput: {summary_throughput:.2f} {summary_unit} ")
+    if summary_macs_per_second >= 1e12:
+        summary_mac_throughput = summary_macs_per_second / 1e12
+        summary_mac_unit = "TMAC/s"
+    elif summary_macs_per_second >= 1e9:
+        summary_mac_throughput = summary_macs_per_second / 1e9
+        summary_mac_unit = "GMAC/s"
+    else:
+        summary_mac_throughput = summary_macs_per_second / 1e6
+        summary_mac_unit = "MMAC/s"
+    print(f"[{mean_time*1e6:20.0f} us] Throughput: {summary_mac_throughput:.2f} {summary_mac_unit} ")
     
-    # Save result (with fallback for NumPy compatibility)
-    try:
-        result_np = result.cpu().numpy()
-        result_np.tofile(args.output)
-    except:
-        # Fallback: save as text file
-        result_cpu = result.cpu()
-        with open(args.output, 'w') as f:
-            for i in range(result_cpu.shape[0]):
-                for j in range(result_cpu.shape[1]):
-                    f.write(f"{result_cpu[i, j].item()} ")
-                f.write("\n")
-    print(f"Result saved to {args.output}")
+    # Save result as text file (avoiding NumPy dependencies)
+    print(f"Saving result to {args.output}")
+    result_cpu = result.cpu()
+    with open(args.output, 'w') as f:
+        for i in range(result_cpu.shape[0]):
+            for j in range(result_cpu.shape[1]):
+                f.write(f"{result_cpu[i, j].item()} ")
+            f.write("\n")
+    print(f"Result saved to {args.output} (text format)")
     
     return 0
 

@@ -79,51 +79,12 @@ communicates with the AI Engine graph via PLIO streaming interfaces.
 // These parameters are optimized for different GEMM sizes to balance
 // performance, resource usage, and timing closure
 
-#if GEMM_SIZE == 32
-    #define BURST_A 32        // Matrix A burst length (words per transaction)
-    #define BURST_B 32        // Matrix B burst length (words per transaction)
-    #define BURST_C 32        // Matrix C burst length (words per transaction)
-    #define FIFO_A_DEPTH 16   // Matrix A FIFO depth (streaming buffer size)
-    #define FIFO_B_DEPTH 16   // Matrix B FIFO depth (streaming buffer size)
-    #define FIFO_C_DEPTH 16   // Matrix C FIFO depth (streaming buffer size)
-#elif GEMM_SIZE == 64
-    #define BURST_A 32        // Matrix A burst length (words per transaction)
-    #define BURST_B 32        // Matrix B burst length (words per transaction)
-    #define BURST_C 32        // Matrix C burst length (words per transaction)
-    #define FIFO_A_DEPTH 16   // Matrix A FIFO depth (streaming buffer size)
-    #define FIFO_B_DEPTH 16   // Matrix B FIFO depth (streaming buffer size)
-    #define FIFO_C_DEPTH 16   // Matrix C FIFO depth (streaming buffer size)
-#elif GEMM_SIZE == 128
-    #define BURST_A 32        // Matrix A burst length (words per transaction)
-    #define BURST_B 32        // Matrix B burst length (words per transaction)
-    #define BURST_C 32        // Matrix C burst length (words per transaction)
-    #define FIFO_A_DEPTH 16   // Matrix A FIFO depth (streaming buffer size)
-    #define FIFO_B_DEPTH 16   // Matrix B FIFO depth (streaming buffer size)
-    #define FIFO_C_DEPTH 16   // Matrix C FIFO depth (streaming buffer size)
-#elif GEMM_SIZE == 256
-    #define BURST_A 32        // Matrix A burst length (words per transaction)
-    #define BURST_B 32        // Matrix B burst length (words per transaction)
-    #define BURST_C 32        // Matrix C burst length (words per transaction)
-    #define FIFO_A_DEPTH 16   // Matrix A FIFO depth (streaming buffer size)
-    #define FIFO_B_DEPTH 16   // Matrix B FIFO depth (streaming buffer size)
-    #define FIFO_C_DEPTH 16   // Matrix C FIFO depth (streaming buffer size)
-#elif GEMM_SIZE == 512
-    #define BURST_A 32        // Matrix A burst length (words per transaction)
-    #define BURST_B 32        // Matrix B burst length (words per transaction)
-    #define BURST_C 32        // Matrix C burst length (words per transaction)
-    #define FIFO_A_DEPTH 16   // Matrix A FIFO depth (streaming buffer size)
-    #define FIFO_B_DEPTH 16   // Matrix B FIFO depth (streaming buffer size)
-    #define FIFO_C_DEPTH 16   // Matrix C FIFO depth (streaming buffer size)
-#elif GEMM_SIZE == 1024
-    #define BURST_A 32        // Matrix A burst length (words per transaction)
-    #define BURST_B 32        // Matrix B burst length (words per transaction)
-    #define BURST_C 32        // Matrix C burst length (words per transaction)
-    #define FIFO_A_DEPTH 16   // Matrix A FIFO depth (streaming buffer size)
-    #define FIFO_B_DEPTH 16   // Matrix B FIFO depth (streaming buffer size)
-    #define FIFO_C_DEPTH 16   // Matrix C FIFO depth (streaming buffer size)
-#else
-    #error "GEMM_SIZE must be one of: 32, 64, 128, 256, 512, or 1024"
-#endif
+#define BURST_A 32        // Matrix A burst length (words per transaction)
+#define BURST_B 32        // Matrix B burst length (words per transaction)
+#define BURST_C 32        // Matrix C burst length (words per transaction)
+#define FIFO_A_DEPTH 16   // Matrix A FIFO depth (streaming buffer size)
+#define FIFO_B_DEPTH 16   // Matrix B FIFO depth (streaming buffer size)
+#define FIFO_C_DEPTH 16   // Matrix C FIFO depth (streaming buffer size)
 
 // ============================================================================
 // OUTSTANDING REQUEST CONFIGURATION

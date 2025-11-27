@@ -1,21 +1,13 @@
 #!/usr/bin/env python3
 """
-NumPy GEMM Benchmark for AI Engine Comparison
-=============================================
+NumPy GEMM Benchmark - DEPRECATED
+=================================
 
-This script performs matrix multiplication using NumPy and provides timing
-comparison with the AI Engine implementation. It's lighter than PyTorch
-and easier to install on Petalinux devices.
+This benchmark is deprecated due to NumPy version conflicts on the board.
+Use pytorch_benchmark.py instead for matrix multiplication comparisons.
 
-Usage:
-    python3 numpy_benchmark.py <matrix_a_file> <matrix_b_file> <output_file>
-
-Features:
-- Supports multiple data types (int16, int32, float32)
-- CPU execution with optimized BLAS
-- Comprehensive timing measurements
-- Memory usage analysis
-- Result validation against AI Engine output
+The PyTorch benchmark provides the same functionality without NumPy conflicts:
+    python3 pytorch_benchmark.py <matrix_a_file> <matrix_b_file> <output_file>
 """
 
 import numpy as np
@@ -127,24 +119,21 @@ def read_config():
         return {}
 
 def main():
-    # Read config first
-    config = read_config()
+    print("=" * 60)
+    print("NumPy GEMM Benchmark - DEPRECATED")
+    print("=" * 60)
+    print("This benchmark is deprecated due to NumPy version conflicts.")
+    print("Please use PyTorch benchmark instead:")
+    print("")
+    print("  python3 pytorch_benchmark.py matrix_A_input.txt matrix_B_input.txt pytorch_result.txt")
+    print("")
+    print("The PyTorch benchmark provides:")
+    print("  ✓ Same matrix multiplication functionality")
+    print("  ✓ No NumPy version conflicts")
+    print("  ✓ Better compatibility with the board")
+    print("=" * 60)
     
-    parser = argparse.ArgumentParser(description='NumPy GEMM Benchmark')
-    parser.add_argument('matrix_a', help='Matrix A input file')
-    parser.add_argument('matrix_b', help='Matrix B input file')
-    parser.add_argument('output', help='Output file for results')
-    parser.add_argument('--size', type=int, default=config.get('GEMM_SIZE', 32), 
-                       help='Matrix size (default: from config.json)')
-    parser.add_argument('--dtype', choices=['int16', 'int32', 'float32'], 
-                       default=config.get('DATA_TYPE', 'int16'), 
-                       help='Data type (default: from config.json)')
-    parser.add_argument('--iterations', type=int, default=10,
-                       help='Number of benchmark iterations (default: 10)')
-    parser.add_argument('--target', default=config.get('TARGET', 'hw'), 
-                       help='AI Engine target (default: from config.json)')
-    
-    args = parser.parse_args()
+    return 1  # Exit with error to indicate deprecated status
     
     print(f"NumPy GEMM Benchmark - {args.size}x{args.size} {args.dtype}")
     print("=" * 60)
