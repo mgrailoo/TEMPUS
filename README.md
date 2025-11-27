@@ -1,4 +1,4 @@
-# Versal AI/ML Engine GEMM Implementation
+# Versal AI-ML Edge Engine GEMM Implementation
 
 Animplementation of General Matrix Multiply (GEMM) operations using Xilinx AI/ML Engine on Versal ACAP platforms. This project demonstrates high-performance matrix multiplication with configurable dimensions, data types, and optimization strategies.
 
@@ -225,3 +225,4 @@ For questions and support:
 
 
 **Built for high-performance AI/ML acceleration on Versal ACAP**
+
