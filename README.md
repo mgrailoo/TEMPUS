@@ -107,7 +107,7 @@ Edit `design/design_configs/config.json`:
   "TARGET": "hw",
   "GEMM_SIZE": 32,
   "DIM": 16,
-  "_comment_DIM": "Changed from 4 to GEMM_SIZE/2 if it fits output matrix in 32kB memory",
+  "_comment_DIM": "Changed from 4 to Max DIM",
   "DATA_TYPE": "int16",
   "_comment_DATA_TYPE": "int32 or int16",
   "TILE_MEM_BYTES": 32768,
@@ -225,4 +225,5 @@ For questions and support:
 
 
 **Built for high-performance AI/ML acceleration on Versal ACAP**
+
 
