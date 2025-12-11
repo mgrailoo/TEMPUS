@@ -2,43 +2,6 @@
 
 Animplementation of General Matrix Multiply (GEMM) operations using Xilinx AI/ML Engine on Versal ACAP platforms. This project demonstrates high-performance matrix multiplication with configurable dimensions, data types, and optimization strategies.
 
-## 🏗️ Architecture Support
-
-This implementation targets **AIEML (AI Engine ML)** hardware generation, which maps to AIE‑ML (v1) `__AIE_ARCH__ == 20` and thus:
-- **Enables 64-bit accumulators** (`__SUPPORTS_ACC64__`) and 32-bit accumulators (`__SUPPORTS_ACC32__`)
-- **Provides ML features including BF16 support** (`_SUPPORTS_BFLOAT16_`)
-- **Versal ACAP Platform**: Optimized for Versal edge and premium series devices
-
-For reference, on AIEML and related architectures the accumulator support is defined as:
-
-```c
-#if (__AIE_ARCH__ == 20) || (__AIE_ARCH__ == 21) || (__AIE_ARCH__ == 22) || \
-    (__AIEARCH__ == 20) || (__AIEARCH__ == 21) || (__AIEARCH__ == 22)
-#define __SUPPORTS_ACC32__
-#define __SUPPORTS_ACC64__
-#endif
-```
-
-### Data type support on AIE‑MLv1 / AIE‑MLv2
-
-- On AIE‑ML generations (ACC64/ACC32 enabled), the BF16 scalar type exists and is usable at the application boundary; however, with the DSPLIB L1/L2 `matrix_mult` we are using, native GEMM for float×float or bf16×bf16 on ACC64 is not implemented. This is why float/bf16 selections fail in compilation with “no supported modes.”
-
-- For `matrix_mult.hpp` ACC64 path (AIE‑ML, AIE‑MLv2):
-  - Supported: integer types (`int16`, `cint16`, `int32`, `cint32`).
-  - Not supported in this kernel path: floating‑point types (`float`, `cfloat`).
-
-- General rule (from DSPLIB docs for this kernel family):
-  - Integer×Integer is supported (e.g., `int16×int16`, `int32×int32`, and complex integer variants).
-  - Float×Float is supported only on older ACC48 paths (not ACC64 in this header).
-  - Mixed Integer×Float is not supported.
-
-
-### Hardware Configuration
-The `aie_primitive.json` file contains the board-specific AI Engine configuration:
-- **AI Engine Array**: 17 columns with compute tiles in row 2
-- **Memory Tiles**: Located in row 1 for data storage
-- **Shim Tiles**: Rows 0-1 for data movement between PL and AI Engine
-- **Hardware Generation**: AIEML (v1) (`__AIE_ARCH__ == 20`, ACC64/BF16 capable)
 
 ## 🚀 Features
 
@@ -145,6 +108,17 @@ make run TARGET=hw
 make report_metrics
 ```
 
+## 📊 Performance Results
+
+| Matrix Size    | AI Engine Time (int16) | AI Engine Time (int32) | PyTorch CPU (float) |
+|----------------|------------------------|------------------------|---------------------|
+| 32×32×32       |        ~0.55ms         |        ~0.50ms         |       ~0.07ms       |
+| 64×64×64       |        ~0.56ms         |        ~0.55ms         |       ~0.19ms       |
+| 128×128×128    |        ~0.50ms         |        ~0.59ms         |       ~0.56ms       |
+| 256×256×256    |        ~0.60ms         |        ~0.66ms         |       ~3.63ms       |
+| 512×512×512    |        ~0.85ms         |        ~1.37ms         |       ~26.62ms      |
+| 1024×1024×1024 |        ~3.75ms         |        ~11.51ms        |       ~195.75ms     |
+
 ## 🔧 Configuration Options
 
 ### Matrix Dimensions
@@ -227,3 +201,40 @@ For questions and support:
 **Built for high-performance AI/ML acceleration on Versal ACAP**
 
 
+## 🏗️ Architecture Support
+
+This implementation targets **AIEML (AI Engine ML)** hardware generation, which maps to AIE‑ML (v1) `__AIE_ARCH__ == 20` and thus:
+- **Enables 64-bit accumulators** (`__SUPPORTS_ACC64__`) and 32-bit accumulators (`__SUPPORTS_ACC32__`)
+- **Provides ML features including BF16 support** (`_SUPPORTS_BFLOAT16_`)
+- **Versal ACAP Platform**: Optimized for Versal edge and premium series devices
+
+For reference, on AIEML and related architectures the accumulator support is defined as:
+
+```c
+#if (__AIE_ARCH__ == 20) || (__AIE_ARCH__ == 21) || (__AIE_ARCH__ == 22) || \
+    (__AIEARCH__ == 20) || (__AIEARCH__ == 21) || (__AIEARCH__ == 22)
+#define __SUPPORTS_ACC32__
+#define __SUPPORTS_ACC64__
+#endif
+```
+
+### Data type support on AIE‑MLv1 / AIE‑MLv2
+
+- On AIE‑ML generations (ACC64/ACC32 enabled), the BF16 scalar type exists and is usable at the application boundary; however, with the DSPLIB L1/L2 `matrix_mult` we are using, native GEMM for float×float or bf16×bf16 on ACC64 is not implemented. This is why float/bf16 selections fail in compilation with “no supported modes.”
+
+- For `matrix_mult.hpp` ACC64 path (AIE‑ML, AIE‑MLv2):
+  - Supported: integer types (`int16`, `cint16`, `int32`, `cint32`).
+  - Not supported in this kernel path: floating‑point types (`float`, `cfloat`).
+
+- General rule (from DSPLIB docs for this kernel family):
+  - Integer×Integer is supported (e.g., `int16×int16`, `int32×int32`, and complex integer variants).
+  - Float×Float is supported only on older ACC48 paths (not ACC64 in this header).
+  - Mixed Integer×Float is not supported.
+
+
+### Hardware Configuration
+The `aie_primitive.json` file contains the board-specific AI Engine configuration:
+- **AI Engine Array**: 17 columns with compute tiles in row 2
+- **Memory Tiles**: Located in row 1 for data storage
+- **Shim Tiles**: Rows 0-1 for data movement between PL and AI Engine
+- **Hardware Generation**: AIEML (v1) (`__AIE_ARCH__ == 20`, ACC64/BF16 capable)
