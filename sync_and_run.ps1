@@ -56,7 +56,7 @@
 # Remote server connection details for SSH operations
 $sshServer = "10.240.33.35"
 $sshUser = "mgrailoo"
-$sshPassword = "toledo"
+$sshPassword = "******"
 $remotePath = "/media/josnu02/large_SDD/mgrailoo/"
 $localPath = ".\design"  # Changed to match remote folder name
 $designPath = "$remotePath/design"
