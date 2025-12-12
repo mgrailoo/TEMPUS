@@ -1,6 +1,6 @@
 # Versal AI-ML Edge Engine GEMM Implementation
 
-Animplementation of General Matrix Multiply (GEMM) operations using Xilinx AI/ML Engine on Versal ACAP platforms. This project demonstrates high-performance matrix multiplication with configurable dimensions, data types, and optimization strategies.
+An implementation of General Matrix Multiply (GEMM) operations using Xilinx AI/ML Engine on Versal ACAP platforms. This project demonstrates high-performance matrix multiplication with configurable dimensions, data types, and optimization strategies.
 
 
 ## 🚀 Features
@@ -235,3 +235,4 @@ The `aie_primitive.json` file contains the board-specific AI Engine configuratio
 - **Memory Tiles**: Located in row 1 for data storage
 - **Shim Tiles**: Rows 0-1 for data movement between PL and AI Engine
 - **Hardware Generation**: AIEML (v1) (`__AIE_ARCH__ == 20`, ACC64/BF16 capable)
+
