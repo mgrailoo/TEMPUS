@@ -394,7 +394,6 @@ kernels: $(KERNEL_XOS)
 $(BUILD_TARGET_DIR)/$(DATAMOVER_KERNEL_XO).xo: $(PL_SRC_REPO)/dma_hls* $(GEMM_CONFIG_HDR)
 	mkdir -p $(BUILD_TARGET_DIR); \
 	cd "$(BUILD_TARGET_DIR)"; \
-	XILINX_TCLSTORE_PATH="/home/mahdieh/data/tools/Xilinx/Vivado/2024.1/data/XilinxTclStore" \
 	v++ --target $(TARGET) $(DATAMOVER_KERNEL_VPP_FLAGS) \
 		$(VPP_FLAGS) -c -k $(DATAMOVER_KERNEL_TOP) \
 		$(DATAMOVER_KERNEL_SRC) -o $@
@@ -869,6 +868,7 @@ endif
 open_vivado_proj: $(BUILD_TARGET_DIR)/_x/link/vivado/vpl/prj/prj.xpr
 	cd "$(BUILD_TARGET_DIR)"; \
 	vivado "_x/link/vivado/vpl/prj/prj.xpr"
+
 
 
 
