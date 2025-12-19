@@ -354,8 +354,8 @@ PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/c_golden.txt
 PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/matrix_A_input.txt
 PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/matrix_B_input.txt
 PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/setup_ml_environment.sh
-PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/RUNTIME_ML_SETUP_GUIDE.md
-PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/README_RUNTIME_ML.md
+# PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/RUNTIME_ML_SETUP_GUIDE.md
+# PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/README_RUNTIME_ML.md
 PKG_FLAGS += --package.sd_file $(HOST_APP_SRC)/pytorch_benchmark.py
 # PKG_FLAGS += --package.sd_file $(HOST_APP_SRC)/numpy_benchmark.py
 
@@ -868,6 +868,7 @@ endif
 open_vivado_proj: $(BUILD_TARGET_DIR)/_x/link/vivado/vpl/prj/prj.xpr
 	cd "$(BUILD_TARGET_DIR)"; \
 	vivado "_x/link/vivado/vpl/prj/prj.xpr"
+
 
 
 
