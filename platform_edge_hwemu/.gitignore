@@ -1,0 +1,21 @@
+# Ignore build output directory
+/build
+# Allow export directory (contains essential platform files like .xpfm)
+# /export
+
+# Ignore object files and dependent files
+.o
+.d
+
+#Ignore logs folder and log files
+/logs
+.log
+
+#Ignore lock files
+.lock
+
+.bin
+.pdi
+.peers.ini
+.repo.yaml
+.vitisWorkspace.json

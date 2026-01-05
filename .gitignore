@@ -20,7 +20,6 @@ active_cores.json
 *.bit
 *.hwh
 *.hwdef
-*.tcl
 *.dcp
 *.rpt
 *.log

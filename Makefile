@@ -537,7 +537,32 @@ xsa:  kernels graph $(BUILD_TARGET_DIR)/$(XSA)
 
 $(BUILD_TARGET_DIR)/$(XSA):$(KERNEL_XOS) $(SYSTEM_CONFIGS_REPO)/*
 	cd "$(BUILD_TARGET_DIR)";	\
+	# First attempt: Run v++ -l normally (extracts platform); \
 	v++ -l $(VPP_FLAGS) $(VPP_LINK_FLAGS) -t $(TARGET) -o $@ $(KERNEL_XOS) $(LIBADF_A); \
+	VPP_EXIT=$$?; \
+	# If failed, check if it's due to missing IP files and fix; \
+	if [ $$VPP_EXIT -ne 0 ]; then \
+		PLATFORM_SRC="_x/link/vivado/vpl/.local/hw_platform/prj/platform_edge_versal.gen/sources_1/bd/ext_platform_part/ip/ext_platform_part_CIPS_0_0/bd_0/ip/ip_1"; \
+		PROJECT_DST="_x/link/vivado/vpl/prj/prj.gen/sources_1/bd/ext_platform_part/ip/ext_platform_part_CIPS_0_0/bd_0/ip/ip_1"; \
+		if [ -f "$$PLATFORM_SRC/common_tcl/common.tcl" ] && [ ! -f "$$PROJECT_DST/common_tcl/common.tcl" ]; then \
+			echo "Build failed, but platform IP files found. Copying files and retrying from create_bd step..."; \
+			mkdir -p "$$PROJECT_DST/common_tcl" "$$PROJECT_DST/data"; \
+			cp -f "$$PLATFORM_SRC/common_tcl/common.tcl" "$$PROJECT_DST/common_tcl/" 2>/dev/null && \
+			cp -f "$$PLATFORM_SRC/data/SV20_regs.tcl" "$$PROJECT_DST/data/" 2>/dev/null && \
+			echo "  ✓ IP files copied from extracted platform, retrying build..."; \
+			# Also fix BD symlink if missing; \
+			BD_SRC="_x/link/vivado/vpl/.local/hw_platform/prj/platform_edge_versal.srcs/sources_1/bd/ext_platform_part/ext_platform_part.bd"; \
+			BD_LINK="_x/link/vivado/vpl/.local/hw_platform/prj/ext_platform_part.bd"; \
+			if [ -f "$$BD_SRC" ] && [ ! -f "$$BD_LINK" ]; then \
+				ln -sf "platform_edge_versal.srcs/sources_1/bd/ext_platform_part/ext_platform_part.bd" "$$BD_LINK"; \
+				echo "  ✓ BD symlink created"; \
+			fi; \
+			# Retry from create_bd step; \
+			v++ -l $(VPP_FLAGS) $(VPP_LINK_FLAGS) -t $(TARGET) --from_step vpl.create_bd -o $@ $(KERNEL_XOS) $(LIBADF_A); \
+		else \
+			exit $$VPP_EXIT; \
+		fi; \
+	fi; \
 	echo ""; \
 	echo "XSA Compilation Complete..."; \
 	echo "####################################"; \

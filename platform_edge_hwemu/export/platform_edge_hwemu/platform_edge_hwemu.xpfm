@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<sdx:platform xmlns:sdx="http://www.xilinx.com/sdx" sdx:library="sdx" sdx:name="platform_edge_hwemu" sdx:vendor="xilinx.com" sdx:version="1.0">
+    <sdx:description/>
+    <sdx:hardwarePlatforms>
+        <sdx:hardwarePlatform sdx:name="platform_edge_versal.xsa" sdx:path="hw"/>
+        <sdx:hwEmuPlatform sdx:name="platform_edge_versal_hwemu.xsa" sdx:path="hw_emu"/>
+    </sdx:hardwarePlatforms>
+    <sdx:softwarePlatforms>
+        <sdx:softwarePlatform sdx:name="platform_edge_hwemu.spfm" sdx:path="sw"/>
+    </sdx:softwarePlatforms>
+</sdx:platform>

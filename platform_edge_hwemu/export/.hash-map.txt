@@ -1,0 +1,1 @@
+{"generate.platform":[{"uri":"/home/josnu02/workspace_versal2/platform_edge_hwemu/vitis-comp.json","md5":"afea6694d7c214a3f469d1436e7639ed"}]}
