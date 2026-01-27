@@ -172,18 +172,4 @@ export DISABLE_LOW_AREA_MODE=1
 # Optional: Add XRT include path to C++ include path
 # export CPLUS_INCLUDE_PATH=/opt/xilinx/xrt/include:$CPLUS_INCLUDE_PATH
 
-# ============================================================================
-# SCRIPT COMPLETION
-# ============================================================================
-# Environment setup is now complete. You can proceed with building and
-# running the AI Engine GEMM application.
-#
-# Next steps:
-# 1. Run: make help                    # See all available build targets
-# 2. Run: make sd_card                # Build complete design
-# 3. Run: make run                    # Build and run emulation
-# 4. Run: make all                    # Build, run, and generate reports
-#
-# For more information, see the project README.md file.
-# ============================================================================
 

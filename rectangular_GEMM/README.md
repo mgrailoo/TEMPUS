@@ -118,9 +118,9 @@ make report_metrics
 
 ## 📊 Performance Results
 
-### Rectangular Matrix Performance
+### Rectangular Matrix Performance (mut be revised!)
 
-| Matrix Size (A×AB×B)  | AIE engine time (16 AIE cores, INT16) |Pytorch CPU (ARM A72, dual-core, float),                     |
+| Matrix Size (A×AB×B)  | AIE engine time (16 AIE cores, INT16) |Pytorch CPU (ARM A72, dual-core, float)                      |
 |-----------------------|---------------------------------------|-------------------------------------------------------------|
 | 1024×32×8 (DIM = 512) |               ~0.29ms                 |              ~0.22ms , int16(1.53ms)                        |
 | 1024×64×8 (DIM = 512) |               ~0.48ms                 |              ~0.3ms  , int16(3ms)                           |
