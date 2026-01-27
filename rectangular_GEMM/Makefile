@@ -427,8 +427,8 @@ PKG_FLAGS += --package.sd_file $(BUILD_TARGET_DIR)/$(APP_ELF) $(BUILD_TARGET_DIR
 PKG_FLAGS += --package.sd_file $(BUILD_TARGET_DIR)/$(APP_ELF_INF_RUN)
 PKG_FLAGS += --package.sd_file $(EXEC_SCRIPTS_REPO)/$(EMBEDDED_EXEC_SCRIPT)
 # Removed large golden files (~2GB) to keep boot partition small and compatible
-# PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/a_golden.txt
-# PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/b_golden.txt
+PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/a_golden.txt
+PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/b_golden.txt
 # PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/c_golden.txt
 # Matrix input files and PyTorch benchmark removed to save memory (~20 MB)
 # PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/matrix_A_input.txt
