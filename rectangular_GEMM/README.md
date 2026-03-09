@@ -122,12 +122,6 @@ make report_metrics
 
 | Matrix Size (A×AB×B)  | AIE engine time (16 AIE cores, INT16) |Pytorch CPU (ARM A72, dual-core, float)                      |
 |-----------------------|---------------------------------------|-------------------------------------------------------------|
-| 1024×32×8 (DIM = 512) |               ~0.29ms                 |              ~0.22ms , int16(1.53ms)                        |
-| 1024×64×8 (DIM = 512) |               ~0.48ms                 |              ~0.3ms  , int16(3ms)                           |
-| 2048×32×8 (DIM = 1024)|               ~0.43ms                 |              ~0.32ms , int16(3ms)                           |
-| 2048×64×8 (DIM = 1024)|               ~0.44ms                 |              ~0.74ms , int16(6ms)                           |
-| 3072×32×8 (DIM = 1536)|               ~0.42ms                 |              ~0.53ms , int16(4.5ms)                         |
-| 3072×64×8 (DIM = 1536)|               ~0.48ms                 |              ~1.1ms  , int16(9ms)                           |
 
 
 ## 🔧 Configuration Options
@@ -137,7 +131,7 @@ make report_metrics
 - **GEMM_SIZE_AB**: Columns of A / Rows of B (e.g., 64) - **REQUIRED**
 - **GEMM_SIZE_B**: Columns of Matrix B (e.g., 8) - **REQUIRED**
 - **DIM_A**: Tile dimension for A dimension (calculated as min(DIM, GEMM_SIZE_A/SPLIT_A))
-- **DIM_AB**: Tile dimension for AB dimension (calculated as min(DIM, GEMM_SIZE_AB/CASC_LN_AB))
+- **DIM_AB**: Tile dimension for AB dimension (always GEMM_SIZE_AB // CASC_LN_AB)
 - **DIM_B**: Tile dimension for B dimension (calculated as min(DIM, GEMM_SIZE_B/SPLIT_B))
 - **DIM**: Base tile dimension used for calculations (default: 16)
 - **SPLIT_A**: Decomposition factor for rows of Matrix A (default: 2)

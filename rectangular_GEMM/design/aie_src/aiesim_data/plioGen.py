@@ -81,10 +81,10 @@ def main():
     SPLIT = SPLIT_B  # Legacy: SPLIT refers to SPLIT_B for Matrix C
     CASC_LN = CASC_LN_AB  # Legacy: CASC_LN refers to CASC_LN_AB
     
-    # Calculate DIM_A, DIM_B, and DIM_AB as min(DIM, GEMM_SIZE_A/AB/B / SPLIT)
+    # Calculate DIM_A and DIM_B as min(DIM, GEMM_SIZE_A/B / SPLIT); DIM_AB always GEMM_SIZE_AB // CASC_LN_AB
     DIM = params.get('DIM', 16)
     DIM_A = min(DIM, GEMM_SIZE_A // max(1, SPLIT_A))
-    DIM_AB = min(DIM, GEMM_SIZE_AB // max(1, CASC_LN_AB))
+    DIM_AB = GEMM_SIZE_AB // max(1, CASC_LN_AB)
     DIM_B = min(DIM, GEMM_SIZE_B // max(1, SPLIT_B))
     DATA_TYPE = params['DATA_TYPE']
     TARGET_HW_EMU = params['TARGET_HW_EMU']
@@ -153,7 +153,7 @@ def main():
     
     print(f"\nConfiguration Summary:")
     print(f"GEMM_SIZE_A: {GEMM_SIZE_A}, GEMM_SIZE_AB: {GEMM_SIZE_AB}, GEMM_SIZE_B: {GEMM_SIZE_B}")
-    print(f"DIM_A: {DIM_A} (min({DIM}, {GEMM_SIZE_A}/{SPLIT_A})), DIM_AB: {DIM_AB} (min({DIM}, {GEMM_SIZE_AB}/{CASC_LN_AB})), DIM_B: {DIM_B} (min({DIM}, {GEMM_SIZE_B}/{SPLIT_B}))")
+    print(f"DIM_A: {DIM_A} (min({DIM}, {GEMM_SIZE_A}/{SPLIT_A})), DIM_AB: {DIM_AB} ({GEMM_SIZE_AB}//{CASC_LN_AB}), DIM_B: {DIM_B} (min({DIM}, {GEMM_SIZE_B}/{SPLIT_B}))")
     print(f"SPLIT_A: {SPLIT_A}, SPLIT_B: {SPLIT_B}")
     print(f"CASC_LN_AB: {CASC_LN_AB}")
     print(f"GRAPH_ITER_CNT: {GRAPH_ITER_CNT} (computed: ({GEMM_SIZE_A}×{GEMM_SIZE_B}/{SPLIT_B})/({DIM_A}×{DIM_B}))")

@@ -113,7 +113,7 @@ def read_all_parameters_from_config(config_file_path):
             params['GEMM_SIZE_B'] = int(config_data['GEMM_SIZE_B'])
         if 'DIM' in config_data:
             params['DIM'] = int(config_data['DIM'])
-        # Calculate DIM_A, DIM_B, and DIM_AB as min(DIM, GEMM_SIZE_A/AB/B / SPLIT)
+        # Calculate DIM_A and DIM_B as min(DIM, GEMM_SIZE_A/B / SPLIT); DIM_AB always GEMM_SIZE_AB // CASC_LN_AB
         if 'DIM' in params:
             dim_base = params['DIM']
             # DIM_A = min(DIM, GEMM_SIZE_A / SPLIT_A)
@@ -123,13 +123,11 @@ def read_all_parameters_from_config(config_file_path):
                 params['DIM_A'] = min(dim_base, params['GEMM_SIZE_A'] // max(1, params['SPLIT']))
             else:
                 params['DIM_A'] = dim_base
-            # DIM_AB = min(DIM, GEMM_SIZE_AB / CASC_LN_AB)
+            # DIM_AB depends only on GEMM_SIZE_AB and CASC_LN_AB
             if 'GEMM_SIZE_AB' in params and 'CASC_LN_AB' in params:
-                params['DIM_AB'] = min(dim_base, params['GEMM_SIZE_AB'] // max(1, params['CASC_LN_AB']))
+                params['DIM_AB'] = params['GEMM_SIZE_AB'] // max(1, params['CASC_LN_AB'])
             elif 'GEMM_SIZE_AB' in params and 'CASC_LN' in params:
-                params['DIM_AB'] = min(dim_base, params['GEMM_SIZE_AB'] // max(1, params['CASC_LN']))
-            else:
-                params['DIM_AB'] = dim_base
+                params['DIM_AB'] = params['GEMM_SIZE_AB'] // max(1, params['CASC_LN'])
             # DIM_B = min(DIM, GEMM_SIZE_B / SPLIT_B)
             if 'GEMM_SIZE_B' in params and 'SPLIT_B' in params:
                 params['DIM_B'] = min(dim_base, params['GEMM_SIZE_B'] // max(1, params['SPLIT_B']))
@@ -624,10 +622,10 @@ def main():
     SPLIT = SPLIT_B  # Legacy: SPLIT refers to SPLIT_B for Matrix C
     CASC_LN = CASC_LN_AB  # Legacy: CASC_LN refers to CASC_LN_AB
     
-    # Calculate DIM_A, DIM_AB, DIM_B as min(DIM, GEMM_SIZE_A/AB/B / SPLIT)
+    # Calculate DIM_A and DIM_B as min(DIM, GEMM_SIZE_A/B / SPLIT); DIM_AB always GEMM_SIZE_AB // CASC_LN_AB
     DIM = params.get('DIM', 16)
     DIM_A = params.get('DIM_A', min(DIM, GEMM_SIZE_A // max(1, SPLIT_A)))
-    DIM_AB = params.get('DIM_AB', min(DIM, GEMM_SIZE_AB // max(1, CASC_LN_AB)))
+    DIM_AB = params.get('DIM_AB', GEMM_SIZE_AB // max(1, CASC_LN_AB))
     DIM_B = params.get('DIM_B', min(DIM, GEMM_SIZE_B // max(1, SPLIT_B)))
     DATA_TYPE = params['DATA_TYPE']
     TARGET_HW_EMU = params['TARGET_HW_EMU']
@@ -645,7 +643,7 @@ def main():
     
     print(f"\nConfiguration Summary:")
     print(f"GEMM_SIZE_A: {GEMM_SIZE_A}, GEMM_SIZE_AB: {GEMM_SIZE_AB}, GEMM_SIZE_B: {GEMM_SIZE_B}")
-    print(f"DIM_A: {DIM_A} (min({DIM}, {GEMM_SIZE_A}/{SPLIT_A})), DIM_AB: {DIM_AB} (min({DIM}, {GEMM_SIZE_AB}/{CASC_LN_AB})), DIM_B: {DIM_B} (min({DIM}, {GEMM_SIZE_B}/{SPLIT_B}))")
+    print(f"DIM_A: {DIM_A} (min({DIM}, {GEMM_SIZE_A}/{SPLIT_A})), DIM_AB: {DIM_AB} ({GEMM_SIZE_AB}//{CASC_LN_AB}), DIM_B: {DIM_B} (min({DIM}, {GEMM_SIZE_B}/{SPLIT_B}))")
     print(f"SPLIT_A: {SPLIT_A}, SPLIT_B: {SPLIT_B}")
     print(f"CASC_LN_AB: {CASC_LN_AB}")
     print(f"GRAPH_ITER_CNT: {GRAPH_ITER_CNT} (computed: ({GEMM_SIZE_A}×{GEMM_SIZE_B}/{SPLIT_B})/({DIM_A}×{DIM_B}))")

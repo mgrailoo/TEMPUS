@@ -88,9 +88,9 @@ endif
 # Read DIM for calculation purposes only (used to compute DIM_A, DIM_AB, DIM_B)
 # DIM is not used in code after DIM_A/AB/B are computed
 DIM := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));print(c.get('DIM', 16))")
-# Calculate DIM_A, DIM_AB, DIM_B as min(DIM, GEMM_SIZE_A/AB/B / SPLIT)
+# Calculate DIM_A, DIM_B as min(DIM, GEMM_SIZE_A/B / SPLIT); DIM_AB depends only on GEMM_SIZE_AB and CASC_LN_AB
 DIM_A := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));d=c.get('DIM',16);ga=$(GEMM_SIZE_A);sa=c.get('SPLIT_A') or c.get('SPLIT',2);print(min(d, ga // max(1, sa)))")
-DIM_AB := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));d=c.get('DIM',16);gab=$(GEMM_SIZE_AB);cl=c.get('CASC_LN_AB') or c.get('CASC_LN',8);print(min(d, gab // max(1, cl)))")
+DIM_AB := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));gab=$(GEMM_SIZE_AB);cl=c.get('CASC_LN_AB') or c.get('CASC_LN',8);print(gab // max(1, cl))")
 DIM_B := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));d=c.get('DIM',16);gb=$(GEMM_SIZE_B);sb=c.get('SPLIT_B') or c.get('SPLIT',2);print(min(d, gb // max(1, sb)))")
 # Read new explicit naming (SPLIT_A, SPLIT_B, CASC_LN_AB) with backward compatibility
 SPLIT_A := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));print(c.get('SPLIT_A') or c.get('SPLIT',2))")

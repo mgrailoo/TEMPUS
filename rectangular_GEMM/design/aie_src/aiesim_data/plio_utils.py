@@ -74,8 +74,8 @@ def read_all_parameters_from_config(config_file_path):
         params['GEMM_SIZE_B'] = int(v)
         v = config_data.get('DIM');        
         if v is not None: params['DIM'] = int(v)
-        # Calculate DIM_A, DIM_B, and DIM_AB as min(DIM, GEMM_SIZE_A/AB/B / SPLIT)
-        # This ensures DIM doesn't exceed the split/cascade sizes
+        # Calculate DIM_A and DIM_B as min(DIM, GEMM_SIZE_A/B / SPLIT); DIM_AB always GEMM_SIZE_AB // CASC_LN_AB
+        # This ensures DIM_A/DIM_B don't exceed the split sizes; DIM_AB is tied to cascade length only.
         if params.get('DIM') is not None:
             dim_base = params['DIM']
             # DIM_A = min(DIM, GEMM_SIZE_A / SPLIT_A)
@@ -85,13 +85,11 @@ def read_all_parameters_from_config(config_file_path):
                 params['DIM_A'] = min(dim_base, params['GEMM_SIZE_A'] // max(1, params['SPLIT']))
             else:
                 params['DIM_A'] = dim_base
-            # DIM_AB = min(DIM, GEMM_SIZE_AB / CASC_LN_AB)
+            # DIM_AB depends only on GEMM_SIZE_AB and CASC_LN_AB
             if params.get('GEMM_SIZE_AB') is not None and params.get('CASC_LN_AB') is not None:
-                params['DIM_AB'] = min(dim_base, params['GEMM_SIZE_AB'] // max(1, params['CASC_LN_AB']))
+                params['DIM_AB'] = params['GEMM_SIZE_AB'] // max(1, params['CASC_LN_AB'])
             elif params.get('GEMM_SIZE_AB') is not None and params.get('CASC_LN') is not None:
-                params['DIM_AB'] = min(dim_base, params['GEMM_SIZE_AB'] // max(1, params['CASC_LN']))
-            else:
-                params['DIM_AB'] = dim_base
+                params['DIM_AB'] = params['GEMM_SIZE_AB'] // max(1, params['CASC_LN'])
             # DIM_B = min(DIM, GEMM_SIZE_B / SPLIT_B)
             if params.get('GEMM_SIZE_B') is not None and params.get('SPLIT_B') is not None:
                 params['DIM_B'] = min(dim_base, params['GEMM_SIZE_B'] // max(1, params['SPLIT_B']))
@@ -987,7 +985,8 @@ def compute_dim_a_b(gemm_size_a, gemm_size_ab, gemm_size_b, dim_a, dim_ab, dim_b
     """
     # Effective dims limited by split/cascade
     dim_a_effective = min(dim_a, gemm_size_a // max(1, split_a))  # A dimension split by SPLIT_A
-    dim_ab_effective = min(dim_ab, gemm_size_ab // max(1, casc_ln_ab))  # AB dimension split by CASC_LN_AB
+    # DIM_AB is always derived from GEMM_SIZE_AB and CASC_LN_AB (independent of DIM)
+    dim_ab_effective = gemm_size_ab // max(1, casc_ln_ab)
     dim_b_effective = min(dim_b, gemm_size_b // max(1, split_b))  # B dimension split by SPLIT_B
     return dim_a_effective, dim_ab_effective, dim_b_effective
 

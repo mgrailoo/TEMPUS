@@ -24,7 +24,7 @@ Architecture:
 Template Parameters:
 - data_t: Data type (int16/int32/float)
 - DIM_A: Tile dimension for A dimension (rows of A, rows of C)
-- DIM_AB: Tile dimension for AB dimension (cols of A, rows of B)
+- DIM_AB: Tile dimension for AB dimension (cols of A, rows of B); always GEMM_SIZE_AB / CASC_LN_AB
 - DIM_B: Tile dimension for B dimension (cols of B, cols of C)
 - CASC_LN_AB: Number of cascade levels for AB dimension
 - SPLIT_B: Number of parallel processing splits for B dimension
