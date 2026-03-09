@@ -2,6 +2,10 @@
 
 This repository contains several related GEMM (General Matrix Multiply) designs targeting AMD Versal AI Engine‑ML (AIE‑ML) devices. Each subdirectory is a self‑contained project with its own configuration, build flow, and documentation.
 
+For all provided flows and tiling schemes, the **minimum supported GEMM sizes** are:
+- `GEMM_SIZE_A` ≥ 8, `GEMM_SIZE_B` ≥ 8
+- `GEMM_SIZE_AB` ≥ 32
+
 The projects are organized so you can start from simple, square GEMM examples and progress to fully end‑to‑end rectangular GEMM with PyTorch comparison on the board.
 
 ---
@@ -9,9 +13,9 @@ The projects are organized so you can start from simple, square GEMM examples an
 ## 📁 Repository Layout
 
 - `platform_edge_hwemu/`  
-  **Reference platform and hardware‑emulation glue**:
+  **Reference platform and common hw/hw_emu glue**:
   - Versal edge platform files.
-  - Scripts and configuration for running **hardware emulation** (hw_emu).
+  - Scripts and configuration for running both **hardware (hw)** and **hardware emulation (hw_emu)**.
   - Used as the common platform base for the other GEMM examples.
 
 - `square_GEMM/`  
@@ -22,7 +26,7 @@ The projects are organized so you can start from simple, square GEMM examples an
 
 - `rectangular_GEMM/`  
   **Rectangular GEMM design** (A×AB×B format), focused on graph structure and tiling:
-  - Supports configurations like 1024×32×8, 2048×64×8, etc.
+  - Supports configurations like 8×32×8, 2048×64×8, etc.
   - Uses three explicit sizes:
     - `GEMM_SIZE_A`: rows of A.
     - `GEMM_SIZE_AB`: columns of A / rows of B.
@@ -67,6 +71,9 @@ Across the projects you will see the same basic parameters:
   - `GEMM_SIZE_A`: rows of Matrix A.
   - `GEMM_SIZE_AB`: columns of A / rows of B.
   - `GEMM_SIZE_B`: columns of Matrix B.
+  - **Minimum supported sizes** (for the provided flows and tiling):
+    - `GEMM_SIZE_A` ≥ 8, `GEMM_SIZE_B` ≥ 8
+    - `GEMM_SIZE_AB` ≥ 32
 
 - **Tiling**
   - `DIM_A`: tile size in A dimension, typically `min(DIM, GEMM_SIZE_A / SPLIT_A)`.
