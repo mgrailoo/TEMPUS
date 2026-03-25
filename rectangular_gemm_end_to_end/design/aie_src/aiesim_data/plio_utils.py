@@ -13,8 +13,8 @@ Elements within sub-tiles | Row-major | Row-major | Row-major
 Sub-tiles within tiles    | Row-major | Row-major | Row-major
 Tiles within blocks       | Row-major | Column-major | Column-major
 
-Sub-tile sizes (AI Engine-ML): SUB_TILE_A=4, SUB_TILE_AB=4 for all. For Matrix C/B:
-  int16: SUB_TILE_B=4 (4×4 sub-tiles). int32/float: SUB_TILE_B=2 (4×2 sub-tiles).
+Sub-tile sizes: SUB_TILE_A=4, SUB_TILE_AB=4 for all. For Matrix C/B use SUB_TILE_B from
+config.json (defaults: int16 → 4×4×4, int32 → 4×4×4 for this project; must divide DIM_B).
 """
 
 import os
@@ -40,7 +40,8 @@ def read_all_parameters_from_config(config_file_path):
         'SUB_TILE_A': 4,
         'SUB_TILE_AB': 4,
         'SUB_TILE_B': 4,
-        'GRAPH_ITER_CNT': 2,
+        # GRAPH_ITER_CNT set after DIM_A/DIM_B (same formula as Makefile / gemm_config.h)
+        'GRAPH_ITER_CNT': 0,
         'SPLIT': 2,
         'CASC_LN': 8,
         'TARGET_HW_EMU': 1,
@@ -147,9 +148,22 @@ def read_all_parameters_from_config(config_file_path):
             # Default to int16 if not specified
             params['DATA_TYPE'] = 'int16'
 
-        # Calculate derived parameters based on DATA_TYPE
-        params['WRD_LN'] = get_word_length(params['DATA_TYPE'])
-        
+        if params['DATA_TYPE'] == 'float':
+            raise ValueError("DATA_TYPE 'float' is not supported on this platform; use 'int16' or 'int32'.")
+
+        # WRD_LN: explicit config wins (must match Makefile); else derive from DATA_TYPE
+        _expected_wl = get_word_length(params['DATA_TYPE'])
+        v = config_data.get('WRD_LN')
+        if v is not None:
+            params['WRD_LN'] = int(v)
+            if params['WRD_LN'] != _expected_wl:
+                print(
+                    f"WARNING: WRD_LN={params['WRD_LN']} in config != type-default {_expected_wl} "
+                    f"for DATA_TYPE={params['DATA_TYPE']}. Using config value (keep aligned with Makefile gemm_config.h)."
+                )
+        else:
+            params['WRD_LN'] = _expected_wl
+
         # Read sub-tile values from config file, fallback to calculated values if not specified
         v = config_data.get('SUB_TILE_A')
         if v is not None: 
@@ -165,12 +179,12 @@ def read_all_parameters_from_config(config_file_path):
             _, sub_tile_ab, _ = get_optimal_sub_tile_size(params['DATA_TYPE'])
             params['SUB_TILE_AB'] = sub_tile_ab
             
+        _, _, _default_sub_b = get_optimal_sub_tile_size(params['DATA_TYPE'])
         v = config_data.get('SUB_TILE_B')
-        if v is not None: 
+        if v is not None:
             params['SUB_TILE_B'] = int(v)
         else:
-            _, _, sub_tile_b = get_optimal_sub_tile_size(params['DATA_TYPE'])
-            params['SUB_TILE_B'] = sub_tile_b
+            params['SUB_TILE_B'] = _default_sub_b
         
         # Set TILE_MEM_BYTES from config
         v = config_data.get('TILE_MEM_BYTES')
@@ -192,6 +206,30 @@ def read_all_parameters_from_config(config_file_path):
         # Set random seed from config
         v = config_data.get('RANDOM_SEED')
         if v is not None: params['RANDOM_SEED'] = int(v)
+
+        # GRAPH_ITER_CNT: identical to Makefile, gemm_config.h, plioGen, and graph.run()
+        # (GEMM_SIZE_A * GEMM_SIZE_B / SPLIT_B) / (DIM_A * DIM_B); integer ops match shell $((...))
+        _iter = int(params.get('ITER_CNT', 1))
+        if _iter == -1:
+            params['GRAPH_ITER_CNT'] = -1
+        else:
+            _ga = params['GEMM_SIZE_A']
+            _gb = params['GEMM_SIZE_B']
+            _sb = int(params.get('SPLIT_B', params.get('SPLIT', 2)))
+            _da = int(params['DIM_A'])
+            _db = int(params['DIM_B'])
+            _computed = (_ga * _gb // max(1, _sb)) // max(1, _da * _db)
+            _json_gic = config_data.get('GRAPH_ITER_CNT')
+            if _json_gic is not None:
+                try:
+                    if int(_json_gic) != _computed:
+                        print(
+                            f"WARNING: config.json GRAPH_ITER_CNT={_json_gic} != computed {_computed} "
+                            f"((GEMM_SIZE_A*GEMM_SIZE_B/SPLIT_B)/(DIM_A*DIM_B)); using computed value."
+                        )
+                except (TypeError, ValueError):
+                    pass
+            params['GRAPH_ITER_CNT'] = _computed
 
         print(f"Successfully read parameters from config file:")
         for key, value in params.items():
@@ -218,30 +256,18 @@ def get_word_length(data_type="int16"):
         return 8   # 128 / 16 = 8 elements per 128-bit PLIO stream
     elif data_type in ["int32", "uint32"]:
         return 4   # 128 / 32 = 4 elements per 128-bit PLIO stream
-    elif data_type == "float":
-        return 4   # 128 / 32 = 4 elements per 128-bit PLIO stream (float is 32-bit)
     else:
         return 8   # Default to int16
 
 
 def get_optimal_sub_tile_size(data_type):
     """
-    Return hardware-supported sub-tile sizes (M, K, N) for the given data type.
-    Values are taken from the AI Engine-ML matrix multiplication instruction set.
+    Default sub-tile sizes (M, K, N) when config.json omits SUB_TILE_*.
+    Project standard: 4×4×4 for both int16 and int32 (must match gemm_config.h / dma_hls).
     """
-    # DSPLIB matrix_mult_graph supported sub-tile sizes (AIE_VARIANT=1)
-    if data_type in ["int16", "uint16"]:
-        # 16b x 16b: 4x4x4 (primary)
+    if data_type in ["int16", "uint16", "int32", "uint32"]:
         return 4, 4, 4
-    elif data_type in ["int32", "uint32"]:
-        # 32b x 32b: 4x4x2 (primary), 2x2x2 (alternative)
-        return 4, 4, 2
-    elif data_type == "float":
-        # float x float: 4x4x2 (primary), 2x2x2 (alternative)
-        return 4, 4, 2
-    else:
-        # Default fallback
-        return 4, 4, 4
+    return 4, 4, 4
 
 
 def get_random_range(data_type="int16"):
@@ -252,8 +278,6 @@ def get_random_range(data_type="int16"):
         return -8, 8
     elif data_type in ["int32", "uint32"]:
         return -16, 16
-    elif data_type == "float":
-        return -1.0, 1.0
     else:
         return -8, 8
 
@@ -266,8 +290,6 @@ def get_numpy_dtype(data_type):
         return np.int16
     elif data_type in ["int32", "uint32"]:
         return np.int32
-    elif data_type == "float":
-        return np.float32
     else:
         return np.int16
 
@@ -315,16 +337,10 @@ def generate_sequential_matrix_files(size_a, size_ab, size_b, path, matrix_a_fil
         except Exception as e:
             print(f"Error loading Matrix A: {str(e)}")
             print("Generating random Matrix A instead")
-            if data_type == "float":
-                matrix_A[:size_a, :size_ab] = np.random.uniform(min_val, max_val, size=(size_a, size_ab)).astype(numpy_dtype)
-            else:
-                matrix_A[:size_a, :size_ab] = np.random.randint(min_val, max_val + 1, size=(size_a, size_ab), dtype=numpy_dtype)
+            matrix_A[:size_a, :size_ab] = np.random.randint(min_val, max_val + 1, size=(size_a, size_ab), dtype=numpy_dtype)
     else:
         # Fill the actual data areas with random values
-        if data_type == "float":
-            matrix_A[:size_a, :size_ab] = np.random.uniform(min_val, max_val, size=(size_a, size_ab)).astype(numpy_dtype)
-        else:
-            matrix_A[:size_a, :size_ab] = np.random.randint(min_val, max_val + 1, size=(size_a, size_ab), dtype=numpy_dtype)
+        matrix_A[:size_a, :size_ab] = np.random.randint(min_val, max_val + 1, size=(size_a, size_ab), dtype=numpy_dtype)
     
     if matrix_b_file:
         try:
@@ -341,24 +357,13 @@ def generate_sequential_matrix_files(size_a, size_ab, size_b, path, matrix_a_fil
         except Exception as e:
             print(f"Error loading Matrix B: {str(e)}")
             print("Generating random Matrix B instead")
-            if data_type == "float":
-                matrix_B[:size_ab, :size_b] = np.random.uniform(min_val, max_val, size=(size_ab, size_b)).astype(numpy_dtype)
-            else:
-                matrix_B[:size_ab, :size_b] = np.random.randint(min_val, max_val + 1, size=(size_ab, size_b), dtype=numpy_dtype)
+            matrix_B[:size_ab, :size_b] = np.random.randint(min_val, max_val + 1, size=(size_ab, size_b), dtype=numpy_dtype)
     else:
         # Fill the actual data areas with random values
-        if data_type == "float":
-            matrix_B[:size_ab, :size_b] = np.random.uniform(min_val, max_val, size=(size_ab, size_b)).astype(numpy_dtype)
-        else:
-            matrix_B[:size_ab, :size_b] = np.random.randint(min_val, max_val + 1, size=(size_ab, size_b), dtype=numpy_dtype)
+        matrix_B[:size_ab, :size_b] = np.random.randint(min_val, max_val + 1, size=(size_ab, size_b), dtype=numpy_dtype)
     
-    # Calculate golden output C = A × B using float32 precision to match host
-    if data_type == "float":
-        # Ensure both matrices are float32 before computation
-        A_float32 = matrix_A.astype(np.float32)
-        B_float32 = matrix_B.astype(np.float32)
-        matrix_C = np.matmul(A_float32, B_float32).astype(np.float32)
-    elif data_type in ["int16", "uint16"]:
+    # Calculate golden output C = A × B
+    if data_type in ["int16", "uint16"]:
         # Use int64 to prevent overflow, then cast back to int16
         matrix_C = np.matmul(matrix_A.astype(np.int64), matrix_B.astype(np.int64)).astype(np.int16)
     elif data_type in ["int32", "uint32"]:
@@ -367,17 +372,11 @@ def generate_sequential_matrix_files(size_a, size_ab, size_b, path, matrix_a_fil
     else:
         # Use int64 to prevent overflow, then cast back to int32
         matrix_C = np.matmul(matrix_A.astype(np.int64), matrix_B.astype(np.int64)).astype(np.int32)
-      
-    # Apply 4 decimal place rounding to match host application
-    if data_type == "float":
-        matrix_A = np.round(matrix_A * 10000.0) / 10000.0
-        matrix_B = np.round(matrix_B * 10000.0) / 10000.0
-        matrix_C = np.round(matrix_C * 10000.0) / 10000.0
-    
+
     # Save matrices with appropriate format
-    fmt_a = '%.4f' if data_type == "float" else '%d'
-    fmt_b = '%.4f' if data_type == "float" else '%d'
-    fmt_c = '%.4f' if data_type == "float" else '%d'
+    fmt_a = '%d'
+    fmt_b = '%d'
+    fmt_c = '%d'
     
     np.savetxt(os.path.join(path, 'matrix_A_input.txt'), matrix_A, fmt=fmt_a)
     np.savetxt(os.path.join(path, 'matrix_B_input.txt'), matrix_B, fmt=fmt_b)
@@ -454,10 +453,7 @@ def generate_split_output_files(matrix_C, split_b, split_a, dim_a, dim_b, wrd_ln
                             sub_end_col = min(sub_start_col + sub_tile_b, tile_end_col)
                             for r in range(sub_start_row, sub_end_row):
                                 for c in range(sub_start_col, sub_end_col):
-                                    if data_type == "float":
-                                        tile_elements.append(f"{matrix_C[r, c]:.4f}")
-                                    else:
-                                        tile_elements.append(str(int(matrix_C[r, c])))
+                                    tile_elements.append(str(int(matrix_C[r, c])))
                     for i in range(0, len(tile_elements), wrd_ln):
                         chunk = tile_elements[i : i + wrd_ln]
                         while len(chunk) < wrd_ln:
@@ -484,8 +480,9 @@ def generate_split_output_files(matrix_C, split_b, split_a, dim_a, dim_b, wrd_ln
 def write_matrix_A_cascade(matrix_A, casc_idx, filename, gemm_size_a, gemm_size_ab, gemm_size_b, split_a, split_b, casc_ln_ab, dim_a, dim_ab, dim_b, wrd_ln, data_type, sub_tile_a=None, sub_tile_ab=None):
     """Write Matrix A cascade strip with broadcasting.
     
-    Generation is ELEMENT-BY-ELEMENT (not 8-by-8): we iterate block → tiles row-major → sub-tiles
-    row-major → elements row-major and append each element to a list. Only when writing the file
+    Generation is ELEMENT-BY-ELEMENT (not 8-by-8): we iterate block → row-tiles (one full cascade
+    stripe wide) → sub-tiles row-major → elements row-major and append each element to a list.
+    Only when writing the file
     do we chunk into lines of WRD_LN (8) elements = one 128-bit word per line. So the output file
     matches the HLS stream format (128-bit words = WRD_LN elements per line); at the end the
     element sequence is the same as inp_A produces, in chunks of 128-bit words.
@@ -515,9 +512,9 @@ def write_matrix_A_cascade(matrix_A, casc_idx, filename, gemm_size_a, gemm_size_
         print(f"\nWriting {filename}")
         print(f"Cascade {casc_idx}: Columns {start_col} to {end_col-1}")
         
-        # Calculate effective tile dimensions - limited by split/cascade
-        dim_a_eff = min(dim_a, gemm_size_a // split_a)  # Tile rows limited by split size
-        dim_b_eff = min(dim_ab, cols_per_casc)  # Tile cols limited by cascade size (uses DIM_AB for AB dimension)
+        # Effective tile: rows limited by split; AB width = full cascade stripe (matches dma_hls dim_ab_eff = cols_per_casc).
+        dim_a_eff = min(dim_a, gemm_size_a // split_a)
+        dim_b_eff = cols_per_casc
         
         # Use provided sub-tile values or fallback to calculated values
         if sub_tile_a is None:
@@ -551,39 +548,29 @@ def write_matrix_A_cascade(matrix_A, casc_idx, filename, gemm_size_a, gemm_size_
                 # Collect all elements for this block in row-major order
                 block_elements = []
                 
-                # Calculate number of tiles using effective dimensions
                 tiles_per_row = (gemm_size_a // split_a) // dim_a_eff
-                tiles_per_col = cols_per_casc // dim_b_eff
-                
+                tiles_per_col = 1  # one tile spans full cascade column range [start_col, end_col)
+
                 print(f"  Block {block_idx}: {tiles_per_row}x{tiles_per_col} tiles of size {dim_a_eff}x{dim_b_eff}")
                 print(f"  Sub-tiles: {sub_tiles_per_row}x{sub_tiles_per_col} sub-tiles of size {sub_tile_a}x{sub_tile_ab} (A uses A×AB)")
-                
-                # Process tiles in row-major order (row-major between tiles)
+
+                tile_start_col = start_col
+                tile_end_col = end_col
                 for tile_row_idx in range(tiles_per_row):
-                    for tile_col_idx in range(tiles_per_col):
-                        # Calculate tile boundaries using effective dimensions
-                        tile_start_row = block_start_row + tile_row_idx * dim_a_eff
-                        tile_end_row = min(tile_start_row + dim_a_eff, block_end_row)
-                        tile_start_col = start_col + tile_col_idx * dim_b_eff
-                        tile_end_col = min(tile_start_col + dim_b_eff, end_col)
-                        
-                        # Process sub-tiles within each tile in row-major order (A: A×AB)
-                        for sub_row in range(sub_tiles_per_row):
-                            for sub_col in range(sub_tiles_per_col):
-                                # Calculate sub-tile boundaries (A: A×AB)
-                                sub_start_row = tile_start_row + sub_row * sub_tile_a
-                                sub_end_row = min(sub_start_row + sub_tile_a, tile_end_row)
-                                sub_start_col = tile_start_col + sub_col * sub_tile_ab
-                                sub_end_col = min(sub_start_col + sub_tile_ab, tile_end_col)
-                                
-                                # Process elements within sub-tile in row-major order
-                                for row in range(sub_start_row, sub_end_row):
-                                    for col in range(sub_start_col, sub_end_col):
-                                        if row < gemm_size_a and col < gemm_size_ab:
-                                            if data_type == "float":
-                                                block_elements.append(f"{matrix_A[row, col]:.4f}")
-                                            else:
-                                                block_elements.append(str(matrix_A[row, col]))
+                    tile_start_row = block_start_row + tile_row_idx * dim_a_eff
+                    tile_end_row = min(tile_start_row + dim_a_eff, block_end_row)
+
+                    for sub_row in range(sub_tiles_per_row):
+                        for sub_col in range(sub_tiles_per_col):
+                            sub_start_row = tile_start_row + sub_row * sub_tile_a
+                            sub_end_row = min(sub_start_row + sub_tile_a, tile_end_row)
+                            sub_start_col = tile_start_col + sub_col * sub_tile_ab
+                            sub_end_col = min(sub_start_col + sub_tile_ab, tile_end_col)
+
+                            for row in range(sub_start_row, sub_end_row):
+                                for col in range(sub_start_col, sub_end_col):
+                                    if row < gemm_size_a and col < gemm_size_ab:
+                                        block_elements.append(str(matrix_A[row, col]))
                 
                 # Write this block's elements in chunks of exactly WRD_LN
                 chunks = []
@@ -664,7 +651,7 @@ def write_matrix_B_split_cascade(matrix_B, split_idx, casc_idx, filename, gemm_s
         print(f"Block boundaries: rows {start_row}:{end_row}, cols {start_col}:{end_col}")
         
         # Calculate effective tile dimensions - limited by cascade/split
-        dim_a_eff = min(dim_ab, rows_per_casc)  # Tile rows limited by cascade size (uses DIM_AB for AB dimension)
+        dim_a_eff = rows_per_casc  # Tile rows limited by cascade size (uses DIM_AB for AB dimension)
         dim_b_eff = min(dim_b, cols_per_split)  # Tile cols limited by split size
         
         # Use provided sub-tile values or fallback to calculated values
@@ -714,10 +701,7 @@ def write_matrix_B_split_cascade(matrix_B, split_idx, casc_idx, filename, gemm_s
                             for row in range(sub_start_row, sub_end_row):
                                 for col in range(sub_start_col, sub_end_col):
                                     if row < gemm_size_ab and col < gemm_size_b:
-                                        if data_type == "float":
-                                            column_elements.append(f"{matrix_B[row, col]:.4f}")
-                                        else:
-                                            column_elements.append(str(matrix_B[row, col]))
+                                        column_elements.append(str(matrix_B[row, col]))
                 
                 # Write column elements in chunks of exactly WRD_LN
                 chunks = []
@@ -927,8 +911,8 @@ def generate_c_fake_from_split_files(
     if not all_file_lines or any(not lines for lines in all_file_lines):
         raise ValueError("One or more split files are empty")
 
-    fmt_c = "%.4f" if data_type == "float" else "%d"
-    matrix_c_fake = np.zeros((gemm_size_a, gemm_size_b), dtype=np.float64)
+    fmt_c = "%d"
+    matrix_c_fake = np.zeros((gemm_size_a, gemm_size_b), dtype=np.int64)
     line_idx_per_file = [0] * split_b
 
     for block_row in range(split_a):

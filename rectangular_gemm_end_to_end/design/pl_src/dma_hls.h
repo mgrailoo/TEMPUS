@@ -22,12 +22,8 @@ SPDX-License-Identifier: MIT
     typedef ap_int<32> data_t;
     #define DATA_BITS 32
     #define ELEMENTS_PER_128BIT 4
-#elif DATA_TYPE == 33  // float
-    typedef float data_t;
-    #define DATA_BITS 32
-    #define ELEMENTS_PER_128BIT 4
 #else
-    #error "Unsupported DATA_TYPE. Use 16 (int16), 32 (int32), or 33 (float)"
+    #error "Unsupported DATA_TYPE. Use 16 (int16) or 32 (int32)"
 #endif
 
 // Ensure WRD_LN matches ELEMENTS_PER_128BIT

@@ -73,11 +73,32 @@ communicates with the AI Engine graph via PLIO streaming interfaces.
 //   - Streamed to NUM_A_FILES (= CASC_LN_AB) PLIO streams
 //   - Each cascade gets its column range with proper block/tile/sub-tile ordering
 //   - Broadcasting applied per block (BROADCAST_COUNT_A times)
+//   - Single DDR reader: load SUB_TILE_A × GEMM_SIZE_AB rows into BRAM, pack stripes from slab,
+//     then emit word index w to A0..A7 in lockstep (no eight parallel m_axi readers).
 //
 // Matrix B and C sizes are defined in gemm_config.h:
 //   EXACT_MATB_SZ = BASE_MATB_SZ * NUM_B_FILES  (from gemm_config.h)
 //   EXACT_MATC_SZ = BASE_MATC_SZ * NUM_C_FILES  (from gemm_config.h)
 // Do NOT redefine them here - use the values from gemm_config.h
+
+// Packed 128b words for one SPLIT_A block and one cascade stripe (must match inp_A_producer).
+#ifndef ELEMS_A_PER_BLOCK_CASCADE
+#define ELEMS_A_PER_BLOCK_CASCADE ((GEMM_SIZE_A / SPLIT_A) * (GEMM_SIZE_AB / CASC_LN_AB))
+#endif
+#ifndef WORDS_A_PER_BLOCK_CASCADE
+#define WORDS_A_PER_BLOCK_CASCADE (((ELEMS_A_PER_BLOCK_CASCADE) + (WRD_LN) - 1) / (WRD_LN))
+#endif
+// BRAM slab: SUB_TILE_A matrix rows × full row in 128b words (one sequential DDR slab read)
+#ifndef WORDS_ACROSS_A_ROW
+#define WORDS_ACROSS_A_ROW (GEMM_SIZE_AB / WRD_LN)
+#endif
+#ifndef SLAB_WORDS
+#define SLAB_WORDS (SUB_TILE_A * WORDS_ACROSS_A_ROW)
+#endif
+// Packed words from one slab stripe (all sub-tile cols for one cascade) — upper bound
+#ifndef MAX_WORDS_A_SLAB
+#define MAX_WORDS_A_SLAB (((SUB_TILE_A * (GEMM_SIZE_AB / CASC_LN_AB)) + WRD_LN - 1) / WRD_LN + 2)
+#endif
 
 // ============================================================================
 // SUB-TILE PARAMETERS
@@ -87,11 +108,10 @@ communicates with the AI Engine graph via PLIO streaming interfaces.
 //   - SUB_TILE_AB: Sub-tile dimension for AB dimension (columns of A / rows of B)
 //   - SUB_TILE_B: Sub-tile dimension for B dimension (columns of Matrix B/C)
 //   - Data-type dependent values (from AI Engine-ML matrix_mult instruction set):
-//     * int16: SUB_TILE_A=4, SUB_TILE_AB=4, SUB_TILE_B=4 (4×4×4 sub-tiles)
-//     * int32: SUB_TILE_A=4, SUB_TILE_AB=4, SUB_TILE_B=2 (4×4×2 sub-tiles)
-//     * float: SUB_TILE_A=4, SUB_TILE_AB=4, SUB_TILE_B=2 (4×4×2 sub-tiles)
-//   - SUB_TILE_B is smaller for int32/float because WRD_LN=4 (vs WRD_LN=8 for int16)
-//   - Used in inp_A_producer for element-level processing within tiles
+//     * int16 / int32 (this project): SUB_TILE_A=4, SUB_TILE_AB=4, SUB_TILE_B=4 (4×4×4 sub-tiles)
+//   - inp_A / pack_cascade_from_slab use only SUB_TILE_A and SUB_TILE_AB.
+//   - SUB_TILE_B is for Matrix B / C paths (inp_B, out_C), not for a0_casc* stream layout.
+//   - int32 WRD_LN=4 → each PLIO beat / a0_casc*.txt line holds 4 int32s; a full A row in DDR is GEMM_SIZE_AB/WRD_LN packed words.
 //   - Note: SUB_TILE_M, SUB_TILE_K, SUB_TILE_N are deprecated (use SUB_TILE_A/AB/B)
 //
 // ============================================================================
@@ -113,19 +133,31 @@ communicates with the AI Engine graph via PLIO streaming interfaces.
 // These parameters are optimized for different GEMM sizes to balance
 // performance, resource usage, and timing closure
 
-#define BURST_A 32        // Matrix A burst length (words per transaction)
-#define BURST_B 32        // Matrix B burst length (words per transaction)
-#define BURST_C 32        // Matrix C burst length (words per transaction)
+// Burst/outstanding 64 regressed PL timing at 312.5 MHz on ve2302; 32 helps closure.
+#define BURST_A 32        // Matrix A burst length (128b words per AXI burst)
+#define BURST_B 32        // Matrix B burst length
+#define BURST_C 32        // Matrix C write burst length
 #define FIFO_A_DEPTH 16   // Matrix A FIFO depth (streaming buffer size)
 #define FIFO_B_DEPTH 16   // Matrix B FIFO depth (streaming buffer size)
-#define FIFO_C_DEPTH 16   // Matrix C FIFO depth (streaming buffer size)
+// SIMPLE_OUT_C=0: depth from gemm_config.h (FIFO_C_DEPTH_COMPLEX). Shallow FIFO risks AIE/PL deadlock.
+#ifndef FIFO_C_DEPTH
+#if SIMPLE_OUT_C
+#define FIFO_C_DEPTH 16
+#else
+#ifndef FIFO_C_DEPTH_COMPLEX
+/* Fallback if gemm_config.h omitted FIFO_C_DEPTH_COMPLEX: run `make gemm_config.h` with SIMPLE_OUT_C=0 for adaptive depth. */
+#define FIFO_C_DEPTH_COMPLEX 8192
+#endif
+#define FIFO_C_DEPTH FIFO_C_DEPTH_COMPLEX
+#endif
+#endif
 
 // ============================================================================
 // OUTSTANDING REQUEST CONFIGURATION
 // ============================================================================
 // Configure outstanding requests for DMA - optimized for lower resource pressure
 // These parameters control how many memory transactions can be in-flight simultaneously
-#ifndef OUTSTANDING_A 
+#ifndef OUTSTANDING_A
 #define OUTSTANDING_A 32     // Matrix A outstanding read requests
 #endif
 #ifndef OUTSTANDING_B
@@ -138,128 +170,80 @@ communicates with the AI Engine graph via PLIO streaming interfaces.
 
 
 // ============================================================================
-// MATRIX A PRODUCER FUNCTION - CASCADE TRANSFORMATION (DATAFLOW)
+// MATRIX A — SLAB READ + PACK + INTERLEAVED AXI (single m_axi reader)
 // ============================================================================
 /**
- * @brief Producer: Reads DDR (128-bit words) and emits same element sequence as Python, as 128-bit stream words
- * 
- * DDR: matA[] is row-major for the WHOLE matrix; each 128-bit word = WRD_LN elements (8 for int16).
- *   linear_idx = row*GEMM_SIZE_AB + col  ->  word_idx = linear_idx/WRD_LN,  pos = linear_idx%WRD_LN.
- * Python: builds cascade element-by-element (no 8-by-8); then chunks into lines of WRD_LN for the file.
- * We: traverse in the SAME order (blocks, tiles row-major, sub-tiles row-major, elements row-major),
- *     read 128-bit words from DDR and extract the correct element per (row,col), append to logical
- *     stream, and pack every WRD_LN elements into one 128-bit word for block_stream. So our stream
- *     matches a0_casc<j>.txt line-by-line (same element order, chunked into words of WRD_LN).
- * 
- * Sub-tile: we read one 128-bit word per sub-tile row (one matrix row) and take 4 elements
- * (SUB_TILE_AB=4) at positions src_elem_start..src_elem_start+3; next sub-tile row = next 128-bit word.
- * 
- * @param matA Raw Matrix A in DDR (128-bit words, row-major whole matrix, WRD_LN elements/word)
- * @param block_stream Output: 128-bit words, each WRD_LN elements in order (matches Python file lines)
- * @param block_size_stream Output: number of words for this block
- * @param casc_idx Cascade index (0-7)
- * @param block_idx Block index (0 to SPLIT_A-1)
+ * Pack one cascade stripe for matrix rows [st_start_row, st_end_row) using data already in @p slab.
+ * Slab layout: row r relative to st_start_row at slab[r * WORDS_ACROSS_A_ROW + wc] (same as DDR row-major).
+ * Same traversal as plio_utils.write_matrix_A_cascade / former inp_A_producer (st_col, st_r, st_c).
+ * Returns number of 128b words written to @p out_pack.
  */
-void inp_A_producer(
-   ap_int<128>* matA,
-   hls::stream<ap_int<128>> &block_stream,
-   hls::stream<int> &block_size_stream,
-   int casc_idx,
-   int block_idx
+static void pack_cascade_from_slab(
+    const ap_int<128> slab[SLAB_WORDS],
+    int st_start_row,
+    int st_end_row,
+    int casc_idx,
+    ap_int<128> out_pack[MAX_WORDS_A_SLAB],
+    int &n_words_out
 ) {
-    // --- Line-by-line: how streams are generated ---
-    // 1) HLS: allow parallel/out-of-order reads from matA
-    #pragma HLS DEPENDENCE variable=matA inter false
-    #pragma HLS DEPENDENCE variable=matA intra false
-
-    // 2) Block/cascade bounds: this call produces ONE block for ONE cascade.
+    #pragma HLS INLINE off
+    n_words_out = 0;
     const int cols_per_casc = GEMM_SIZE_AB / CASC_LN_AB;
-    const int rows_per_block = GEMM_SIZE_A / SPLIT_A;
-    const int dim_a_eff = (DIM_A < rows_per_block) ? DIM_A : rows_per_block;
-    const int dim_ab_eff = (DIM_AB < cols_per_casc) ? DIM_AB : cols_per_casc;
-    const int tiles_per_row = rows_per_block / dim_a_eff;
-    const int tiles_per_col = cols_per_casc / dim_ab_eff;
-    const int sub_tiles_per_row = dim_a_eff / SUB_TILE_A;
-    const int sub_tiles_per_col = dim_ab_eff / SUB_TILE_AB;
     const int casc_start_col = casc_idx * cols_per_casc;
     const int casc_end_col = casc_start_col + cols_per_casc;
-    const int block_start_row = block_idx * rows_per_block;
-    const int block_end_row = block_start_row + rows_per_block;
-    // 3) word_buffer: accumulate WRD_LN elements (8 for int16), then pack into one 128-bit word and stream.
+    const int dim_ab_eff = cols_per_casc;
+    const int sub_tiles_per_col = dim_ab_eff / SUB_TILE_AB;
+    const int tile_start_col = casc_start_col;
+    const int tile_end_col = casc_end_col;
+
     ap_int<128> word_buffer[WRD_LN];
     #pragma HLS ARRAY_PARTITION variable=word_buffer complete
-    
-    int element_counter = 0;  // Logical stream position: we emit elements in same order as Python, then pack every WRD_LN into one 128-bit word
-    int words_produced = 0;
-    
-    // Traversal order (single source of truth, must match Python): block (this call) -> tiles row-major -> sub-tiles row-major -> elements row-major within sub-tile.
-    // For each (global_row, global_col) we map to DDR: word_idx = (row*GEMM_SIZE_AB+col)/WRD_LN, pos = (row*GEMM_SIZE_AB+col)%WRD_LN; then pack every WRD_LN elements into one output word.
-    collect_and_stream: for (int tile_row = 0; tile_row < tiles_per_row; tile_row++) {
+    int element_counter = 0;
+
+    pack_cols: for (int st_col = 0; st_col < sub_tiles_per_col; st_col++) {
         #pragma HLS LOOP_FLATTEN off
-        for (int tile_col = 0; tile_col < tiles_per_col; tile_col++) {
-            #pragma HLS LOOP_FLATTEN off
-            const int tile_start_row = block_start_row + tile_row * dim_a_eff;
-            const int tile_start_col = casc_start_col + tile_col * dim_ab_eff;
-            // Tile-end bounds (must match Python: min(tile_start + dim_eff, block_end) for correct DIM 8)
-            const int tile_end_row = (tile_start_row + dim_a_eff <= block_end_row) ? (tile_start_row + dim_a_eff) : block_end_row;
-            const int tile_end_col = (tile_start_col + dim_ab_eff <= casc_end_col) ? (tile_start_col + dim_ab_eff) : casc_end_col;
-            
-            for (int st_row = 0; st_row < sub_tiles_per_row; st_row++) {
-                #pragma HLS LOOP_FLATTEN off
-                for (int st_col = 0; st_col < sub_tiles_per_col; st_col++) {
-                    #pragma HLS LOOP_FLATTEN off
-                    const int st_start_row = tile_start_row + st_row * SUB_TILE_A;
-                    const int st_start_col = tile_start_col + st_col * SUB_TILE_AB;
-                    // Sub-tile end boundaries: clip to TILE boundary (same as plio_utils.write_matrix_A_cascade)
-                    const int st_end_row = (st_start_row + SUB_TILE_A <= tile_end_row) ? (st_start_row + SUB_TILE_A) : tile_end_row;
-                    const int st_end_col = (st_start_col + SUB_TILE_AB <= tile_end_col) ? (st_start_col + SUB_TILE_AB) : tile_end_col;
-                    
-                    // Within sub-tile: emit elements in row-major (match Python). DDR words are 128-bit = WRD_LN elements (row-major whole matrix).
-                    // One sub-tile row = 4 elements -> 4 of the 8 in one DDR word; next sub-tile row = next DDR word (next matrix row), same col range.
-                    // So we read one 128-bit word per sub-tile row and extract 4 elements at src_elem_start..src_elem_start+3.
-                    for (int st_r = 0; st_r < SUB_TILE_A; st_r++) {
-                        const int global_row = st_start_row + st_r;
-                        const int linear_base = global_row * GEMM_SIZE_AB + st_start_col;
-                        const int src_word_idx = linear_base / WRD_LN;
-                        const int src_elem_start = linear_base % WRD_LN;  // 0..4 (4 elements from this word)
-                        if (global_row >= st_end_row) break;
-                        ap_int<128> src_word = matA[src_word_idx];  // one 128-bit read per sub-tile row
-                        for (int st_c = 0; st_c < SUB_TILE_AB; st_c++) {
-                            #pragma HLS PIPELINE II=1
-                            const int global_col = st_start_col + st_c;
-                            if (global_col >= st_end_col || global_row >= GEMM_SIZE_A || global_col >= GEMM_SIZE_AB) continue;
-                            const int pos = src_elem_start + st_c;
-                            ap_int<128> element;
-                            if (DATA_TYPE == 16) {
-                                element = (src_word >> (pos * 16)) & 0xFFFF;
-                            } else {
-                                element = (src_word >> (pos * 32)) & 0xFFFFFFFF;
-                            }
-                            const int buffer_pos = element_counter % WRD_LN;
-                            if (DATA_TYPE == 16) {
-                                word_buffer[buffer_pos] = element << (buffer_pos * 16);
-                            } else {
-                                word_buffer[buffer_pos] = element << (buffer_pos * 32);
-                            }
-                            element_counter++;
-                            // Every WRD_LN elements: pack into one 128-bit word (same as Python chunking into file lines of WRD_LN elements)
-                            if ((element_counter & (WRD_LN - 1)) == 0) {
-                                ap_int<128> packed_word = 0;
-                                for (int i = 0; i < WRD_LN; i++) {
-                                    #pragma HLS UNROLL
-                                    packed_word |= word_buffer[i];
-                                }
-                                block_stream.write(packed_word);
-                                words_produced++;
-                            }
-                        }
+        const int st_start_col = tile_start_col + st_col * SUB_TILE_AB;
+        const int st_end_col = (st_start_col + SUB_TILE_AB <= tile_end_col) ? (st_start_col + SUB_TILE_AB) : tile_end_col;
+
+        for (int st_r = 0; st_r < SUB_TILE_A; st_r++) {
+            const int global_row = st_start_row + st_r;
+            const int linear_base = global_row * GEMM_SIZE_AB + st_start_col;
+            const int src_elem_start = linear_base % WRD_LN;
+            if (global_row >= st_end_row) break;
+            const int lr = global_row - st_start_row;
+            const int wc_in_row = (linear_base / WRD_LN) - global_row * WORDS_ACROSS_A_ROW;
+            const int slab_idx = lr * WORDS_ACROSS_A_ROW + wc_in_row;
+            ap_int<128> src_word = slab[slab_idx];
+            for (int st_c = 0; st_c < SUB_TILE_AB; st_c++) {
+                #pragma HLS PIPELINE II=1
+                const int global_col = st_start_col + st_c;
+                if (global_col >= st_end_col || global_row >= GEMM_SIZE_A || global_col >= GEMM_SIZE_AB) continue;
+                const int pos = src_elem_start + st_c;
+                ap_int<128> element;
+                if (DATA_TYPE == 16) {
+                    element = (src_word >> (pos * 16)) & 0xFFFF;
+                } else {
+                    element = (src_word >> (pos * 32)) & 0xFFFFFFFF;
+                }
+                const int buffer_pos = element_counter % WRD_LN;
+                if (DATA_TYPE == 16) {
+                    word_buffer[buffer_pos] = element << (buffer_pos * 16);
+                } else {
+                    word_buffer[buffer_pos] = element << (buffer_pos * 32);
+                }
+                element_counter++;
+                if ((element_counter & (WRD_LN - 1)) == 0) {
+                    ap_int<128> packed_word = 0;
+                    for (int i = 0; i < WRD_LN; i++) {
+                        #pragma HLS UNROLL
+                        packed_word |= word_buffer[i];
                     }
+                    out_pack[n_words_out++] = packed_word;
                 }
             }
         }
     }
-    
-    // Handle remaining elements in partial word
+
     const int remaining = element_counter % WRD_LN;
     if (remaining > 0) {
         ap_int<128> packed_word = 0;
@@ -267,86 +251,12 @@ void inp_A_producer(
             #pragma HLS UNROLL
             packed_word |= word_buffer[i];
         }
-        block_stream.write(packed_word);
-        words_produced++;
-    }
-    
-    // Send block size to consumer
-    block_size_stream.write(words_produced);
-}
-
-// ============================================================================
-// MATRIX A CONSUMER FUNCTION - BROADCAST (DATAFLOW)
-// ============================================================================
-/**
- * @brief Consumer: Reads block data from stream and broadcasts to output
- * 
- * This function reads block data as it's produced and broadcasts it BROADCAST_COUNT_A times.
- * Runs in parallel with producer using dataflow.
- * 
- * @param block_stream Input stream for block data
- * @param block_size_stream Input stream for block size
- * @param strmOut_to_A0-A7 All output streams (routed based on casc_idx)
- * @param casc_idx Cascade index (for routing and last packet detection)
- * @param block_idx Block index (for last packet detection)
- */
-void inp_A_consumer(
-   hls::stream<ap_int<128>> &block_stream,
-   hls::stream<int> &block_size_stream,
-   hls::stream<ap_axiu<128, 0, 0, 0>> &strmOut_to_A0,
-   hls::stream<ap_axiu<128, 0, 0, 0>> &strmOut_to_A1,
-   hls::stream<ap_axiu<128, 0, 0, 0>> &strmOut_to_A2,
-   hls::stream<ap_axiu<128, 0, 0, 0>> &strmOut_to_A3,
-   hls::stream<ap_axiu<128, 0, 0, 0>> &strmOut_to_A4,
-   hls::stream<ap_axiu<128, 0, 0, 0>> &strmOut_to_A5,
-   hls::stream<ap_axiu<128, 0, 0, 0>> &strmOut_to_A6,
-   hls::stream<ap_axiu<128, 0, 0, 0>> &strmOut_to_A7,
-   int casc_idx,
-   int block_idx
-) {
-    // Read block size
-    int words_per_block = block_size_stream.read();
-    
-    // Use BRAM buffer for broadcasting (need to re-read data)
-    ap_int<128> block_buffer[1024];
-    #pragma HLS ARRAY_PARTITION variable=block_buffer cyclic factor=4
-    
-    // Read block data from stream into buffer
-    read_block: for (int w = 0; w < words_per_block; w++) {
-        #pragma HLS PIPELINE II=1
-        block_buffer[w] = block_stream.read();
-    }
-    
-    // Broadcast block exactly BROADCAST_COUNT_A times (bc = 0..BROADCAST_COUNT_A-1, not +1)
-    broadcast_loop: for (int bc = 0; bc < BROADCAST_COUNT_A; bc++) {
-        write_block: for (int w = 0; w < words_per_block; w++) {
-        #pragma HLS PIPELINE II=1
-        
-        ap_axiu<128, 0, 0, 0> pkt;
-            pkt.data = block_buffer[w];
-        pkt.keep = -1;
-        pkt.strb = -1;
-            pkt.last = ((bc == BROADCAST_COUNT_A - 1) && (w == words_per_block - 1) && 
-                       (block_idx == SPLIT_A - 1) && (casc_idx == CASC_LN_AB - 1)) ? 1 : 0;
-        
-            // Route to appropriate cascade stream. strmOut_to_Aj carries the exact 128-bit word
-            // sequence of a0_cascj.txt: line k of a0_casc<j>.txt = k-th word on strmOut_to_Aj.
-            switch(casc_idx) {
-            case 0: strmOut_to_A0.write(pkt); break;
-            case 1: strmOut_to_A1.write(pkt); break;
-            case 2: strmOut_to_A2.write(pkt); break;
-            case 3: strmOut_to_A3.write(pkt); break;
-            case 4: strmOut_to_A4.write(pkt); break;
-            case 5: strmOut_to_A5.write(pkt); break;
-            case 6: strmOut_to_A6.write(pkt); break;
-            case 7: strmOut_to_A7.write(pkt); break;
-            }
-        }
+        out_pack[n_words_out++] = packed_word;
     }
 }
 
 // ============================================================================
-// MATRIX A INPUT FUNCTION - CASCADE TRANSFORMATION AND BROADCAST (DATAFLOW)
+// MATRIX A INPUT FUNCTION - CASCADE TRANSFORMATION AND BROADCAST
 // ============================================================================
 //
 // DDR LAYOUT (Matrix A in DDR)
@@ -366,40 +276,38 @@ void inp_A_consumer(
 //
 // HLS STREAM BUILDING (must match Python element sequence)
 // -------------------------------------------------------
-// We must produce the SAME element sequence as Python, then pack every WRD_LN elements into one
-// 128-bit output word. Traversal order (single source of truth):
-//   - Blocks:     one block per (casc_idx, block_idx) call.
-//   - Tiles:      row-major (tile_row, tile_col).
-//   - Sub-tiles:  row-major (st_row, st_col).
-//   - Elements:   row-major within sub-tile (row then col).
-// For each (global_row, global_col) we: (1) compute DDR word index and position in word from
-// linear_idx = global_row*GEMM_SIZE_AB + global_col; (2) read that 128-bit word (or reuse when
-// same word); (3) append element to stream; (4) every WRD_LN elements pack into one word and
-// write to block_stream. So our output words = Python's file lines (same element order, chunked).
+// Same logical element order as Python; pack every WRD_LN elements into one 128-bit AXI word.
+// Loop nest in inp_A (outer -> inner):
+//   1) block_idx     (SPLIT_A row-blocks of A)
+//   2) bc            (broadcast pass; repeats entire block, BROADCAST_COUNT_A times — same as Python
+//                     “write block then duplicate lines broadcast_count-1 times”)
+//   3) tile_row      (tiles along rows within the block; AB width = full cols_per_casc per tile)
+//   4) st_row        (sub-tile row-band within the tile: up to SUB_TILE_A matrix rows)
+// Per (block_idx, bc, tile_row, st_row): one sequential DDR read loads that row-band × GEMM_SIZE_AB
+// into BRAM (slab). pack_cascade_from_slab() then walks the same hierarchy as Python for each
+// casc_idx, but sources 128b words from slab instead of matA:
+//   - Sub-tiles in the stripe: row-major (st_col sweeps AB inside the slab row-band; st_row is the
+//     outer loop in inp_A, so globally sub-tiles are row-major: (st_row, st_col)).
+//   - Elements within a sub-tile: row-major (st_r, then st_c).
+// Finally, for each slab, packed words are written to AXI interleaved by word index: for each w,
+// strmOut_to_A0..A7 get word w of their stripe in order (each PLIO still sees the same sequence as
+// a0_casc<j>.txt when streams are concatenated over slabs).
 //
-// EIGHT CASCADES -> a_golden INTERLEAVING
-// ---------------------------------------
-// Each cascade produces one stream (content = a0_casc<j>.txt line-by-line). strmOut_to_A0..A7
-// carry these. a_golden.txt = row-interleave of the 8 files: for each row r, write line r of
-// a0_casc0, then line r of a0_casc1, ... line r of a0_casc7 (generate_a_golden). So the 8
-// streams we emit are element-interleaved (by row) when compared to a_golden; each stream itself
-// has elements in 128-bit words (WRD_LN per word).
+// EIGHT CASCADES vs a_golden.txt
+// ------------------------------
+// Each strmOut_to_Aj matches a0_casc<j>.txt line order. a_golden interleaves those files by matrix
+// row of lines; our PLIO timing interleaves by packed-word index w across cascades for lockstep feed.
 //
-// DIM 8 (8x8 tiles): Sub-tile end bounds must be clipped to the TILE boundary (tile_end_row,
-// tile_end_col), not only to block/cascade end, to match plio_utils.write_matrix_A_cascade exactly.
+// Sub-tile bounds: clip to tile_end_row / stripe column bounds (tile_end_col within stripe), same
+// as plio_utils.write_matrix_A_cascade.
 //
 /**
  * @brief Reads raw Matrix A (GEMM_SIZE_A × GEMM_SIZE_AB) and transforms to cascade format
- * 
- * Uses dataflow pattern: producer processes elements and streams them, consumer broadcasts.
- * This enables streaming elements as they're produced rather than buffering everything first.
- * 
- * Key Features:
- * - Dataflow design: producer and consumer run in parallel
- * - Elements streamed as they're produced (true dataflow)
- * - Deadlock-free pipeline design
- * - Matches plioGen.py cascade format exactly (see EQUIVALENCE WITH a_golden.txt above)
- * 
+ *
+ * Single m_axi reader: for each sub-tile row band, sequentially loads SUB_TILE_A × GEMM_SIZE_AB
+ * into BRAM (slab), packs each cascade stripe from slab into a small buffer, then writes AXI
+ * interleaved (word w to A0..A7, then w+1) so cascades stay in lockstep without eight DDR readers.
+ *
  * @param matA Pointer to raw Matrix A (GEMM_SIZE_A × GEMM_SIZE_AB, row-major, packed)
  * @param strmOut_to_A0-A7 Output streams for each cascade level (0-7); content matches a0_casc0..7.txt
  */
@@ -414,44 +322,86 @@ void inp_A(
    hls::stream<ap_axiu<128, 0, 0, 0>> &strmOut_to_A6,   // Cascade 6 output stream
    hls::stream<ap_axiu<128, 0, 0, 0>> &strmOut_to_A7    // Cascade 7 output stream
 ) {
-    // Memory access optimization
     #pragma HLS DEPENDENCE variable=matA inter false
     #pragma HLS DEPENDENCE variable=matA intra false
 
-    // Bounds checking
     if (matA == nullptr) {
         return;
     }
 
-    // Calculate dimensions for cascade transformation
-    const int cols_per_casc = GEMM_SIZE_AB / CASC_LN_AB;
     const int rows_per_block = GEMM_SIZE_A / SPLIT_A;
     const int dim_a_eff = (DIM_A < rows_per_block) ? DIM_A : rows_per_block;
-    const int dim_ab_eff = (DIM_AB < cols_per_casc) ? DIM_AB : cols_per_casc;
-    
-    // Total output size per cascade: BASE_MATA_SZ words
-    // Process in cascade order matching plioGen.py write_matrix_A_cascade()
-    
-    // Process each cascade level (each gets its own stream)
-    cascade_loop: for (int casc_idx = 0; casc_idx < CASC_LN_AB; casc_idx++) {
-        // Process each block (SPLIT_A blocks per cascade)
-        block_loop: for (int block_idx = 0; block_idx < SPLIT_A; block_idx++) {
-            // Dataflow streams for producer-consumer pattern
-            hls::stream<ap_int<128>> block_stream;
-            hls::stream<int> block_size_stream;
-            #pragma HLS STREAM variable=block_stream depth=512
-            #pragma HLS STREAM variable=block_size_stream depth=2
-            
-            // DATAFLOW: Producer and consumer run in parallel
-            // Producer processes elements and streams them as they're produced
-            // Consumer reads from stream and broadcasts
-            #pragma HLS DATAFLOW
-            
-            inp_A_producer(matA, block_stream, block_size_stream, casc_idx, block_idx);
-            inp_A_consumer(block_stream, block_size_stream, 
-                         strmOut_to_A0, strmOut_to_A1, strmOut_to_A2, strmOut_to_A3,
-                         strmOut_to_A4, strmOut_to_A5, strmOut_to_A6, strmOut_to_A7,
-                         casc_idx, block_idx);
+    const int tiles_per_row = rows_per_block / dim_a_eff;
+    const int sub_tiles_per_row = dim_a_eff / SUB_TILE_A;
+
+    ap_int<128> slab[SLAB_WORDS];
+    #pragma HLS BIND_STORAGE variable=slab type=RAM_2P impl=BRAM
+    ap_int<128> packbuf[CASC_LN_AB][MAX_WORDS_A_SLAB];
+    #pragma HLS ARRAY_PARTITION variable=packbuf complete dim=1
+
+    block_loop: for (int block_idx = 0; block_idx < SPLIT_A; block_idx++) {
+        const int block_start_row = block_idx * rows_per_block;
+        const int block_end_row = block_start_row + rows_per_block;
+
+        broadcast_loop: for (int bc = 0; bc < BROADCAST_COUNT_A; bc++) {
+            tile_loop: for (int tile_row = 0; tile_row < tiles_per_row; tile_row++) {
+                #pragma HLS LOOP_FLATTEN off
+                const int tile_start_row = block_start_row + tile_row * dim_a_eff;
+                const int tile_end_row = (tile_start_row + dim_a_eff <= block_end_row)
+                    ? (tile_start_row + dim_a_eff) : block_end_row;
+
+                st_row_loop: for (int st_row = 0; st_row < sub_tiles_per_row; st_row++) {
+                    #pragma HLS LOOP_FLATTEN off
+                    const int st_start_row = tile_start_row + st_row * SUB_TILE_A;
+                    const int st_end_row = (st_start_row + SUB_TILE_A <= tile_end_row)
+                        ? (st_start_row + SUB_TILE_A) : tile_end_row;
+                    const int n_load = st_end_row - st_start_row;
+                    if (n_load <= 0) {
+                        continue;
+                    }
+
+                    // --- One sequential DDR pass: n_load full matrix rows into slab ---
+                    load_slab_lr: for (int lr = 0; lr < n_load; lr++) {
+                        load_slab_wc: for (int wc = 0; wc < WORDS_ACROSS_A_ROW; wc++) {
+                            #pragma HLS PIPELINE II=1
+                            const int g_row = st_start_row + lr;
+                            slab[lr * WORDS_ACROSS_A_ROW + wc] = matA[g_row * WORDS_ACROSS_A_ROW + wc];
+                        }
+                    }
+
+                    int W = 0;
+                    pack_cascades: for (int casc_idx = 0; casc_idx < CASC_LN_AB; casc_idx++) {
+                        int nw = 0;
+                        pack_cascade_from_slab(slab, st_start_row, st_end_row, casc_idx, packbuf[casc_idx], nw);
+                        if (casc_idx == 0) {
+                            W = nw;
+                        }
+                    }
+                    const bool last_slab = (block_idx == SPLIT_A - 1) && (bc == BROADCAST_COUNT_A - 1)
+                        && (tile_row == tiles_per_row - 1) && (st_row == sub_tiles_per_row - 1);
+
+                    emit_interleaved: for (int w = 0; w < W; w++) {
+                        emit_c: for (int c = 0; c < CASC_LN_AB; c++) {
+                            #pragma HLS PIPELINE II=1
+                            ap_axiu<128, 0, 0, 0> pkt;
+                            pkt.data = packbuf[c][w];
+                            pkt.keep = -1;
+                            pkt.strb = -1;
+                            pkt.last = (last_slab && (w == W - 1) && (c == CASC_LN_AB - 1)) ? 1 : 0;
+                            switch (c) {
+                            case 0: strmOut_to_A0.write(pkt); break;
+                            case 1: strmOut_to_A1.write(pkt); break;
+                            case 2: strmOut_to_A2.write(pkt); break;
+                            case 3: strmOut_to_A3.write(pkt); break;
+                            case 4: strmOut_to_A4.write(pkt); break;
+                            case 5: strmOut_to_A5.write(pkt); break;
+                            case 6: strmOut_to_A6.write(pkt); break;
+                            case 7: strmOut_to_A7.write(pkt); break;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -570,12 +520,14 @@ void inp_B(
  * - Writes in raw row-major format matching matrix_C_golden.txt
  * 
  * Sub-Tile Parameters:
- * - SUB_TILE_B: Sub-tile dimension for B dimension (columns of Matrix B/C)
- *   * Data-type dependent: SUB_TILE_B=4 for int16, SUB_TILE_B=2 for int32/float
- *   * int32 has WRD_LN=4 (4 elements/word) vs int16 WRD_LN=8 (8 elements/word)
- * - Note: out_C processes at tile level (DIM_A × DIM_B), not sub-tile level
- * - Sub-tiles are handled internally by AI Engine graph, not by DMA kernel
- * - SUB_TILE_A and SUB_TILE_AB are not used in out_C (only in inp_A)
+ * - SUB_TILE_B: Sub-tile dimension for B dimension (columns of Matrix B/C); 4 for int16 and int32 here
+ *   * int32 WRD_LN=4 (4 elements/word) vs int16 WRD_LN=8 (8 elements/word)
+ * - Per tile: PLIO words are unpacked here into elem order (sub-tiles row-major,
+ *   elements row-major within sub-tiles) into a DIM_A×DIM_B tile buffer, then that
+ *   full tile is scattered into the block row-major buffer (same block rows, DIM_B cols).
+ * - Tile grid within the block: outer tile_col, inner tile_row → column-major tile order
+ *   while advancing along columns of the block; row span of each tile is DIM_A rows.
+ * - SUB_TILE_AB is unused in out_C; stream unpack uses SUB_TILE_A and SUB_TILE_B (inp_A uses SUB_TILE_A/AB).
  * 
  * DDR-Only Mode:
  * - This DMA kernel always operates in DDR-only mode
@@ -589,7 +541,9 @@ void inp_B(
  * - Elements within tiles: row-major order (sub-tiles in row-major, elements in row-major)
  * 
  * Reverse transformation:
- * 1. Read tiled data from streams (column-major tiles within blocks)
+ * 1. Read tiled data from streams (column-major tiles within blocks). C0 and C1 are read
+ *    in lockstep for each tile (same word index from both) so both split graphs drain PLIO
+ *    FIFOs together; plioGen is sequential on files, but HW runs both splits concurrently.
  * 2. De-tile: reconstruct row-major blocks from tiles (reverse column-major tile order)
  * 3. Interleave columns: combine c0 and c1 columns to form full matrix rows
  * 4. Write in raw row-major format: GEMM_SIZE_A rows × GEMM_SIZE_B columns
@@ -650,6 +604,14 @@ void inp_B(
 
      if (matC == nullptr) return;
 
+#if DATA_TYPE == 16
+     typedef ap_int<16> elem_c_t;
+#elif DATA_TYPE == 32
+     typedef ap_int<32> elem_c_t;
+#else
+     #error "Unsupported DATA_TYPE for out_C (use 16 or 32)"
+#endif
+
      // CRITICAL: cols_per_file can be < WRD_LN (e.g. 4 cols, WRD_LN=8). Use ceiling division
      // so words_per_row_in_file >= 1 and words_per_block is correct; otherwise both become 0 and matC stays zero.
      const int cols_per_file = GEMM_SIZE_B / SPLIT_B;
@@ -661,10 +623,15 @@ void inp_B(
      const int words_per_row_in_matrix = GEMM_SIZE_B / WRD_LN;
      const int words_per_block = rows_per_block * words_per_row_in_file;
 
-     ap_int<128> block_buffer_c0[512];
-     ap_int<128> block_buffer_c1[512];
-     #pragma HLS ARRAY_PARTITION variable=block_buffer_c0 cyclic factor=8
-     #pragma HLS ARRAY_PARTITION variable=block_buffer_c1 cyclic factor=8
+#if !defined(WORDS_PER_C_TILE) || !defined(WORDS_PER_C_BLOCK)
+#error "WORDS_PER_C_TILE and WORDS_PER_C_BLOCK must be defined in gemm_config.h (regenerate via Makefile)"
+#endif
+     ap_int<128> block_buffer_c0[WORDS_PER_C_BLOCK];
+     ap_int<128> block_buffer_c1[WORDS_PER_C_BLOCK];
+#if WORDS_PER_C_BLOCK > 8192
+     #pragma HLS BIND_STORAGE variable=block_buffer_c0 type=RAM_2P impl=URAM
+     #pragma HLS BIND_STORAGE variable=block_buffer_c1 type=RAM_2P impl=URAM
+#endif
      #pragma HLS DEPENDENCE variable=block_buffer_c0 inter false
      #pragma HLS DEPENDENCE variable=block_buffer_c1 inter false
 
@@ -674,7 +641,7 @@ void inp_B(
 
          for (int i = 0; i < words_per_block; i++) {
              #pragma HLS PIPELINE II=1
-             #pragma HLS LOOP_TRIPCOUNT min=8 max=512
+             #pragma HLS LOOP_TRIPCOUNT min=8 max=16384
              block_buffer_c0[i] = 0;
              block_buffer_c1[i] = 0;
          }
@@ -682,10 +649,10 @@ void inp_B(
          const int sub_tiles_per_row = DIM_A / SUB_TILE_A;
          const int sub_tiles_per_col = DIM_B / SUB_TILE_B;
 
-         // De-tile c0: ALWAYS process tiles column-major within each block,
-         // matching c0_golden (and your expected order):
-         // (0,0), (1,0), ..., (tiles_per_block_row-1,0),
-         // then (0,1), (1,1), ..., etc.
+         // De-tile c0 & c1: column-major tile order (match c0_golden / c1_golden).
+         // Read C0 and C1 in lockstep for each (tile_col,tile_row), same word index w on both
+         // streams, so parallel mmult splits backpressure together. Previously: drain entire
+         // block on C0 then C1, which could force one PLIO FIFO to hold ~a full block while idle.
          for (int tile_col = 0; tile_col < tiles_per_block_col; tile_col++) {
              #pragma HLS LOOP_FLATTEN off
              #pragma HLS LOOP_TRIPCOUNT min=1 max=8
@@ -695,22 +662,26 @@ void inp_B(
                  const int tile_start_row_in_block = tile_row * DIM_A;
                  const int tile_start_col = tile_col * DIM_B;
 
-                 ap_int<128> tile_words[512];
-                 #pragma HLS ARRAY_PARTITION variable=tile_words cyclic factor=4
+                 ap_int<128> tile_words_c0[WORDS_PER_C_TILE];
+                 ap_int<128> tile_words_c1[WORDS_PER_C_TILE];
+                 #pragma HLS ARRAY_PARTITION variable=tile_words_c0 cyclic factor=2
+                 #pragma HLS ARRAY_PARTITION variable=tile_words_c1 cyclic factor=2
 
-                 for (int w = 0; w < words_per_tile; w++) {
+                 read_c01_tile: for (int w = 0; w < words_per_tile; w++) {
                      #pragma HLS PIPELINE II=1
-                     #pragma HLS LOOP_TRIPCOUNT min=8 max=512
-                     ap_axiu<128, 0, 0, 0> pkt = strmInp_from_C0.read();
-                     tile_words[w] = pkt.data;
+                     #pragma HLS LOOP_TRIPCOUNT min=8 max=4096
+                     ap_axiu<128, 0, 0, 0> pkt0 = strmInp_from_C0.read();
+                     ap_axiu<128, 0, 0, 0> pkt1 = strmInp_from_C1.read();
+                     tile_words_c0[w] = pkt0.data;
+                     tile_words_c1[w] = pkt1.data;
                  }
 
-                 // When DIM_B < WRD_LN (e.g. 4, WRD_LN=8), DIM_B/WRD_LN=0 so we never write to block buffer. Use ceiling.
                  const int words_per_row_in_tile = (DIM_B + WRD_LN - 1) / WRD_LN;
-                 ap_int<16> tile_elements[DIM_A * DIM_B];
+                 elem_c_t tile_elements[DIM_A * DIM_B];
+                 elem_c_t tile_elements_c1[DIM_A * DIM_B];
                  #pragma HLS ARRAY_PARTITION variable=tile_elements cyclic factor=4
+                 #pragma HLS ARRAY_PARTITION variable=tile_elements_c1 cyclic factor=4
 
-                 // Stream order MUST match plioGen generate_split_output_files: sub-tiles row-major, elements within sub-tile row-major, chunked into words of WRD_LN.
                  int element_idx = 0;
                  for (int sub_row = 0; sub_row < sub_tiles_per_row; sub_row++) {
                      for (int sub_col = 0; sub_col < sub_tiles_per_col; sub_col++) {
@@ -720,12 +691,32 @@ void inp_B(
                                  const int col_in_tile = sub_col * SUB_TILE_B + st_col;
                                  const int word_idx = element_idx / WRD_LN;
                                  const int elem_in_word = element_idx % WRD_LN;
-                                 ap_int<128> word = tile_words[word_idx];
-                                 ap_int<16> element = (DATA_TYPE == 16) ?
+                                 ap_int<128> word = tile_words_c0[word_idx];
+                                 elem_c_t element = (DATA_TYPE == 16) ?
                                      (word.range((elem_in_word + 1) * 16 - 1, elem_in_word * 16)) :
                                      (word.range((elem_in_word + 1) * 32 - 1, elem_in_word * 32));
                                  tile_elements[row_in_tile * DIM_B + col_in_tile] = element;
                                  element_idx++;
+                             }
+                         }
+                     }
+                 }
+
+                 int element_idx_c1 = 0;
+                 for (int sub_row = 0; sub_row < sub_tiles_per_row; sub_row++) {
+                     for (int sub_col = 0; sub_col < sub_tiles_per_col; sub_col++) {
+                         for (int st_row = 0; st_row < SUB_TILE_A; st_row++) {
+                             for (int st_col = 0; st_col < SUB_TILE_B; st_col++) {
+                                 const int row_in_tile = sub_row * SUB_TILE_A + st_row;
+                                 const int col_in_tile = sub_col * SUB_TILE_B + st_col;
+                                 const int word_idx = element_idx_c1 / WRD_LN;
+                                 const int elem_in_word = element_idx_c1 % WRD_LN;
+                                 ap_int<128> word = tile_words_c1[word_idx];
+                                 elem_c_t element = (DATA_TYPE == 16) ?
+                                     (word.range((elem_in_word + 1) * 16 - 1, elem_in_word * 16)) :
+                                     (word.range((elem_in_word + 1) * 32 - 1, elem_in_word * 32));
+                                 tile_elements_c1[row_in_tile * DIM_B + col_in_tile] = element;
+                                 element_idx_c1++;
                              }
                          }
                      }
@@ -742,7 +733,7 @@ void inp_B(
                              #pragma HLS UNROLL
                              const int col_in_tile = word_start_col + elem_in_word;
                              if (col_in_tile < DIM_B) {
-                                 ap_int<16> element = tile_elements[row_in_tile * DIM_B + col_in_tile];
+                                 elem_c_t element = tile_elements[row_in_tile * DIM_B + col_in_tile];
                                  if (DATA_TYPE == 16)
                                      buffer_word.range((elem_in_word + 1) * 16 - 1, elem_in_word * 16) = element;
                                  else
@@ -754,7 +745,6 @@ void inp_B(
                          const int buffer_word_idx = global_row_in_block * words_per_row_in_file + word_col_in_file;
                          const int elem_offset = global_col_in_file % WRD_LN;
                          if (elem_offset != 0) {
-                             // Merge into existing word when multiple tiles share same word (e.g. DIM_B=4, WRD_LN=8, tile 1 at col 4)
                              ap_int<128> existing = block_buffer_c0[buffer_word_idx];
                              if (DATA_TYPE == 16) {
                                  for (int i = 0; i < DIM_B; i++)
@@ -769,54 +759,11 @@ void inp_B(
                          }
                      }
                  }
-             }
-         }
-
-         // De-tile c1: same tile order as c0 (ALWAYS column-major between tiles)
-         for (int tile_col = 0; tile_col < tiles_per_block_col; tile_col++) {
-             #pragma HLS LOOP_FLATTEN off
-             for (int tile_row = 0; tile_row < tiles_per_block_row; tile_row++) {
-                 #pragma HLS LOOP_FLATTEN off
-                 const int tile_start_row_in_block = tile_row * DIM_A;
-                 const int tile_start_col = tile_col * DIM_B;
-
-                 ap_int<128> tile_words[512];
-                 #pragma HLS ARRAY_PARTITION variable=tile_words cyclic factor=4
-                 for (int w = 0; w < words_per_tile; w++) {
-                     #pragma HLS PIPELINE II=1
-                     ap_axiu<128, 0, 0, 0> pkt = strmInp_from_C1.read();
-                     tile_words[w] = pkt.data;
-                 }
-
-                 const int words_per_row_in_tile_c1 = (DIM_B + WRD_LN - 1) / WRD_LN;
-                 ap_int<16> tile_elements_c1[DIM_A * DIM_B];
-                 #pragma HLS ARRAY_PARTITION variable=tile_elements_c1 cyclic factor=4
-
-                 // Same as c0: sub-tiles row-major, elements row-major (match plioGen)
-                 int element_idx_c1 = 0;
-                 for (int sub_row = 0; sub_row < sub_tiles_per_row; sub_row++) {
-                     for (int sub_col = 0; sub_col < sub_tiles_per_col; sub_col++) {
-                         for (int st_row = 0; st_row < SUB_TILE_A; st_row++) {
-                             for (int st_col = 0; st_col < SUB_TILE_B; st_col++) {
-                                 const int row_in_tile = sub_row * SUB_TILE_A + st_row;
-                                 const int col_in_tile = sub_col * SUB_TILE_B + st_col;
-                                 const int word_idx = element_idx_c1 / WRD_LN;
-                                 const int elem_in_word = element_idx_c1 % WRD_LN;
-                                 ap_int<128> word = tile_words[word_idx];
-                                 ap_int<16> element = (DATA_TYPE == 16) ?
-                                     (word.range((elem_in_word + 1) * 16 - 1, elem_in_word * 16)) :
-                                     (word.range((elem_in_word + 1) * 32 - 1, elem_in_word * 32));
-                                 tile_elements_c1[row_in_tile * DIM_B + col_in_tile] = element;
-                                 element_idx_c1++;
-                             }
-                         }
-                     }
-                 }
 
                  for (int row_in_tile = 0; row_in_tile < DIM_A; row_in_tile++) {
                      #pragma HLS LOOP_FLATTEN off
                      const int global_row_in_block = tile_start_row_in_block + row_in_tile;
-                     for (int word_in_row = 0; word_in_row < words_per_row_in_tile_c1; word_in_row++) {
+                     for (int word_in_row = 0; word_in_row < words_per_row_in_tile; word_in_row++) {
                          #pragma HLS PIPELINE II=1
                          ap_int<128> buffer_word = 0;
                          const int word_start_col = word_in_row * WRD_LN;
@@ -824,7 +771,7 @@ void inp_B(
                              #pragma HLS UNROLL
                              const int col_in_tile = word_start_col + elem_in_word;
                              if (col_in_tile < DIM_B) {
-                                 ap_int<16> element = tile_elements_c1[row_in_tile * DIM_B + col_in_tile];
+                                 elem_c_t element = tile_elements_c1[row_in_tile * DIM_B + col_in_tile];
                                  if (DATA_TYPE == 16)
                                      buffer_word.range((elem_in_word + 1) * 16 - 1, elem_in_word * 16) = element;
                                  else

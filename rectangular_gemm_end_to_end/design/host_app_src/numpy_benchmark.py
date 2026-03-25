@@ -31,8 +31,6 @@ def load_matrix_from_file(filename, dtype, shape):
             data = np.array(values, dtype=np.int16)
         elif dtype == 'int32':
             data = np.array(values, dtype=np.int32)
-        elif dtype == 'float32':
-            data = np.array(values, dtype=np.float32)
         else:
             raise ValueError(f"Unsupported data type: {dtype}")
         
@@ -162,9 +160,6 @@ def main():
     elif args.dtype == 'int32':
         matrix_a = matrix_a.astype(np.int32)
         matrix_b = matrix_b.astype(np.int32)
-    elif args.dtype == 'float32':
-        matrix_a = matrix_a.astype(np.float32)
-        matrix_b = matrix_b.astype(np.float32)
     
     # Benchmark
     result, mean_time, std_time, min_time, max_time = benchmark_numpy_matmul(

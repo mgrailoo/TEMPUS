@@ -11,7 +11,7 @@ Usage:
     python3 pytorch_benchmark.py <matrix_a_file> <matrix_b_file> <output_file>
 
 Features:
-- Supports multiple data types (int16, int32, float32)
+- Supports int16 and int32 (same as AI Engine build)
 - CPU execution mode only
 - Comprehensive timing measurements
 - Memory usage analysis
@@ -52,9 +52,6 @@ def load_matrix_from_file(filename, dtype, shape):
         elif dtype == 'int32':
             data_list = [int(x) for x in values]
             tensor = torch.tensor(data_list, dtype=torch.int32)
-        elif dtype == 'float32':
-            data_list = [float(x) for x in values]
-            tensor = torch.tensor(data_list, dtype=torch.float32)
         else:
             raise ValueError(f"Unsupported data type: {dtype}")
         
@@ -174,7 +171,7 @@ def main():
     parser.add_argument('output', help='Output file for results')
     parser.add_argument('--size', type=int, default=32,
                        help='Matrix size (default: 32)')
-    parser.add_argument('--dtype', choices=['int16' , 'int32', 'float32'])
+    parser.add_argument('--dtype', choices=['int16', 'int32'])
     parser.add_argument('--device', choices=['cpu'], default='cpu',
                        help='Device to use (cpu only)')
     parser.add_argument('--iterations', type=int, default=10,
@@ -221,9 +218,6 @@ def main():
     elif args.dtype == 'int32':
         matrix_a = matrix_a.int()
         matrix_b = matrix_b.int()
-    elif args.dtype == 'float32':
-        matrix_a = matrix_a.float()
-        matrix_b = matrix_b.float()
     
     # Benchmark
     result, mean_time, std_time, min_time, max_time = benchmark_pytorch_matmul(

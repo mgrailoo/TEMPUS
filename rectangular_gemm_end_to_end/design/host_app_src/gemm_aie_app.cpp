@@ -41,9 +41,9 @@ What gets streamed to the AIE graph (inp_A path):
 
 Key Features:
 - Configurable matrix dimensions via config.json
-- Multiple data type support (int16, int32, float)
+- Multiple data type support (int16, int32)
 - Memory alignment optimization for DMA efficiency
-- Comprehensive timing and performance measurement
+- Phase timing for bring-up and profiling
 - Error handling and validation throughout
 - Support for both finite and infinite execution modes
 
@@ -62,12 +62,10 @@ Where:
 #include <cstdint>       // Standard integer types
 #include <iostream>      // Input/output stream objects
 #include <fstream>       // File stream operations
-#include <vector>        // Dynamic array container
 #include <string>        // String class and functions
 #include <chrono>        // High-resolution timing
 #include <algorithm>     // STL algorithms
 #include <iomanip>       // Stream manipulators for formatting
-#include <cmath>         // Mathematical functions
 #include <thread>        // Threading support
 #include <limits>        // Numeric limits
 #include <memory>        // Smart pointers and aligned_allocator
@@ -144,10 +142,6 @@ Where:
 // │    This enables maximum DMA transfer efficiency                         │
 // └─────────────────────────────────────────────────────────────────────────┘
 
-
-
-
-
 // ============================================================================
 // MAIN APPLICATION FUNCTION
 // ============================================================================
@@ -166,7 +160,7 @@ Where:
  * 9. Launches kernel execution
  * 10. Executes AI Engine computation
  * 11. Synchronizes and processes results
- * 12. Measures and reports timing performance
+ * 12. Measures and reports phase timing
  * 
  * @param argc Number of command line arguments
  * @param argv Array of command line argument strings
@@ -213,8 +207,7 @@ int main(int argc, char ** argv) {
     // ============================================================================
     // MAIN EXECUTION PHASES WITH TIMING MEASUREMENTS
     // ============================================================================
-    // The main execution is divided into 7 distinct phases, each with specific
-    // timing measurements to enable performance analysis and optimization.
+    // Main execution uses phased timing (device init, buffers, data, kernel/graph, compute, sync, output).
     
     try {
         long long phase1_us = 0;
@@ -305,154 +298,40 @@ int main(int argc, char ** argv) {
     phase4_us = logElapsedTime(t_phase4, "PHASE 4 TOTAL: Kernel + Graph creation");
 
         // ========================================================================
-        // PHASE 5 & 6: BENCHMARKING KERNEL LAUNCH + CORE COMPUTATION
+        // PHASE 5 & 6: KERNEL LAUNCH + CORE COMPUTATION
         // ========================================================================
-        // Measure average time for Phase 5 (Kernel Launch) and Phase 6 (Core Computation)
-        // This matches PyTorch benchmarking methodology for fair comparison
-        printf("\n=== PHASE 5 & 6: Benchmarking Kernel Launch + Core Computation ===\n");
-        
-        // Number of warmup and benchmark iterations (similar to PyTorch)
-        const int WARMUP_ITERATIONS = 0; // ******* I changed it to 0 instead of 3 to save time!!!
-        const int BENCHMARK_ITERATIONS = (N_SAMPLES > 1) ? N_SAMPLES : 1;  // Use N_SAMPLES if > 1, else default to 10 ******* I changed it to 1 to save time!!!
-        
-        std::vector<long long> phase5_times;  // Store Phase 5 times
-        std::vector<long long> phase6_times;  // Store Phase 6 times
-        std::vector<long long> phase5_6_combined_times;  // Store combined Phase 5+6 times
-        
-        // ========================================================================
-        // WARMUP RUNS (no timing measurement)
-        // ========================================================================
-        printf("Warming up (%d iterations)...\n", WARMUP_ITERATIONS);
-        for (int warmup = 0; warmup < WARMUP_ITERATIONS; warmup++) {
-            xrt::run warmup_rhdl;  // Create new run handle for each warmup
-            if (launchKernel(dma_hls_khdl, inA_bohdl, inB_bohdl, outC_bohdl, warmup_rhdl) != EXIT_SUCCESS) {
-                return EXIT_FAILURE;
-            }
-            if (executeComputation(gemm_aie_gr, warmup_rhdl, outC_bomapped, outC_bohdl) != EXIT_SUCCESS) {
-                return EXIT_FAILURE;
-            }
-            // Wait for graph to complete before next iteration
-            gemm_aie_gr.wait();
-            // Sync output buffer (required for next iteration)
-            outC_bohdl.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        printf("\n=== PHASE 5 & 6: Kernel Launch + Core Computation ===\n");
+
+        // Phase 5: Kernel launch — DMA reads DDR and streams to AIE.
+        auto t_phase5 = std::chrono::high_resolution_clock::now();
+        xrt::run run_hdl;
+        if (launchKernel(dma_hls_khdl, inA_bohdl, inB_bohdl, outC_bohdl, run_hdl) != EXIT_SUCCESS) {
+            return EXIT_FAILURE;
         }
-        printf("Warmup complete.\n");
-        
-        // ========================================================================
-        // BENCHMARK RUNS (with timing measurement)
-        // ========================================================================
-        printf("Benchmarking Phase 5 + Phase 6 (%d iterations)...\n", BENCHMARK_ITERATIONS);
-        for (int iter = 0; iter < BENCHMARK_ITERATIONS; iter++) {
-            // Phase 5: Kernel Launch — passes A/B/C buffer handles to DMA kernel.
-            // Kernel's inp_A(matA,...) reads matA (DDR) and streams to AIE DataInA0_CASC0..7.
-            auto t_phase5 = std::chrono::high_resolution_clock::now();
-            xrt::run iter_rhdl;  // Create new run handle for each benchmark iteration
-            if (launchKernel(dma_hls_khdl, inA_bohdl, inB_bohdl, outC_bohdl, iter_rhdl) != EXIT_SUCCESS) {
-                return EXIT_FAILURE;
-            }
-            long long phase5_iter_us = getElapsedMicroseconds(t_phase5);
-            phase5_times.push_back(phase5_iter_us);
-            
-            // Phase 6: Core Computation (Graph run + DMA wait)
-            auto t_phase6 = std::chrono::high_resolution_clock::now();
-            if (executeComputation(gemm_aie_gr, iter_rhdl, outC_bomapped, outC_bohdl) != EXIT_SUCCESS) {
-                return EXIT_FAILURE;
-            }
-            // Wait for graph to complete before next iteration
-            gemm_aie_gr.wait();
-            long long phase6_iter_us = getElapsedMicroseconds(t_phase6);
-            phase6_times.push_back(phase6_iter_us);
-            
-            // Combined Phase 5 + Phase 6 time
-            long long phase5_6_combined_us = phase5_iter_us + phase6_iter_us;
-            phase5_6_combined_times.push_back(phase5_6_combined_us);
-            
-            // Sync output buffer (required for next iteration)
-            outC_bohdl.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-            
-            if ((iter + 1) % 5 == 0 || iter == BENCHMARK_ITERATIONS - 1) {
-                printf("  Completed %d/%d iterations\n", iter + 1, BENCHMARK_ITERATIONS);
-            }
+        phase5_us = getElapsedMicroseconds(t_phase5);
+
+        // Phase 6: Graph run + DMA wait
+        auto t_phase6 = std::chrono::high_resolution_clock::now();
+        if (executeComputation(gemm_aie_gr, run_hdl, outC_bomapped, outC_bohdl) != EXIT_SUCCESS) {
+            return EXIT_FAILURE;
         }
-        
-        // ========================================================================
-        // END GRAPH EXECUTION (CRITICAL: Prevents state persistence between runs)
-        // ========================================================================
-        // After all iterations complete, properly end the graph to clean up device state
-        // Without this, subsequent program runs may experience 1000x slowdown due to
-        // graph state persisting on the device from the previous run
+
+        phase6_us = getElapsedMicroseconds(t_phase6);
+        gemm_aie_gr.wait();
+        auto buffer_sync_start = std::chrono::high_resolution_clock::now();
+        outC_bohdl.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        phase7_us = logElapsedTime(buffer_sync_start, "Output buffer sync (from device)");
+
         printf("Ending graph execution to clean up device state...\n");
         gemm_aie_gr.end();
         printf("Graph execution ended successfully\n");
-        
-        // ========================================================================
-        // CALCULATE STATISTICS (similar to PyTorch)
-        // ========================================================================
-        // Calculate statistics for Phase 5 + Phase 6 combined (most relevant for comparison)
-        long long sum_combined = 0;
-        long long min_combined = phase5_6_combined_times[0];
-        long long max_combined = phase5_6_combined_times[0];
-        
-        for (size_t i = 0; i < phase5_6_combined_times.size(); i++) {
-            sum_combined += phase5_6_combined_times[i];
-            if (phase5_6_combined_times[i] < min_combined) min_combined = phase5_6_combined_times[i];
-            if (phase5_6_combined_times[i] > max_combined) max_combined = phase5_6_combined_times[i];
-        }
-        
-        double mean_combined_us = static_cast<double>(sum_combined) / BENCHMARK_ITERATIONS;
-        
-        // Calculate standard deviation
-        double variance_combined = 0.0;
-        for (size_t i = 0; i < phase5_6_combined_times.size(); i++) {
-            double diff = phase5_6_combined_times[i] - mean_combined_us;
-            variance_combined += diff * diff;
-        }
-        double std_combined_us = sqrt(variance_combined / BENCHMARK_ITERATIONS);
-        
-        // Calculate statistics for Phase 5 only
-        long long sum_phase5 = 0;
-        for (size_t i = 0; i < phase5_times.size(); i++) {
-            sum_phase5 += phase5_times[i];
-        }
-        double mean_phase5_us = static_cast<double>(sum_phase5) / BENCHMARK_ITERATIONS;
-        
-        // Calculate statistics for Phase 6 only
-        long long sum_phase6 = 0;
-        for (size_t i = 0; i < phase6_times.size(); i++) {
-            sum_phase6 += phase6_times[i];
-        }
-        double mean_phase6_us = static_cast<double>(sum_phase6) / BENCHMARK_ITERATIONS;
-        
-        // ========================================================================
-        // PRINT BENCHMARK RESULTS (PyTorch-style format)
-        // ========================================================================
-        printf("\n=== BENCHMARK RESULTS (Phase 5 + Phase 6) ===\n");
-        printf("Matrix Size: %dx%dx%d (A×AB×B)\n", GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B);
-        printf("Iterations: %d (after %d warmup runs)\n", BENCHMARK_ITERATIONS, WARMUP_ITERATIONS);
-        printf("\nPhase 5 + Phase 6 Combined (Kernel Launch + Core Computation):\n");
-        printf("  Mean:   %12.0f us (%8.3f ms) ± %8.0f us (%6.3f ms)\n", 
-               mean_combined_us, mean_combined_us / 1000.0, 
-               std_combined_us, std_combined_us / 1000.0);
-        printf("  Min:    %12lld us (%8.3f ms)\n", min_combined, min_combined / 1000.0);
-        printf("  Max:    %12lld us (%8.3f ms)\n", max_combined, max_combined / 1000.0);
-        printf("\nPhase 5 Only (Kernel Launch):\n");
-        printf("  Mean:   %12.0f us (%8.3f ms)\n", mean_phase5_us, mean_phase5_us / 1000.0);
-        printf("\nPhase 6 Only (Core Computation):\n");
-        printf("  Mean:   %12.0f us (%8.3f ms)\n", mean_phase6_us, mean_phase6_us / 1000.0);
-        printf("\n");
-        
-        // Store average values for summary (use combined Phase 5+6 for main comparison)
-        phase5_us = static_cast<long long>(mean_phase5_us);
-        phase6_us = static_cast<long long>(mean_phase6_us);
-        
-        // Sync output buffer from device (final sync after all iterations)
-        auto buffer_sync_start = std::chrono::high_resolution_clock::now();
-        outC_bohdl.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-        printf("Output buffer synced successfully\n");
-        phase7_us = logElapsedTime(buffer_sync_start, "phase 7: Buffer sync");
 
-        // Sync debug dump buffers too
-
+        long long combined_us = phase5_us + phase6_us;
+        printf("\n=== TIMING (Phase 5 + Phase 6, single run) ===\n");
+        printf("Matrix size: %d x %d x %d (A x AB x B)\n", GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B);
+        printf("Phase 5 (kernel launch):      %8lld us (%8.3f ms)\n", phase5_us, phase5_us / 1000.0);
+        printf("Phase 6 (graph + DMA wait):   %8lld us (%8.3f ms)\n", phase6_us, phase6_us / 1000.0);
+        printf("Combined (5+6):               %8lld us (%8.3f ms)\n", combined_us, combined_us / 1000.0);
 
         // ========================================================================
         // PHASE 8: OUTPUT PROCESSING AND FILE WRITING
@@ -465,7 +344,9 @@ int main(int argc, char ** argv) {
         // Uncomment next line to always print first 16 words of C after sync:
         // printOutputBuffer(outC_bomapped, ALIGNED_MATC_BYTES);
 
-        if (writeOutputToFile(outC_bomapped, outC_bohdl, "/sd_card/output_files/output_c.txt") != EXIT_SUCCESS) {
+        // Write c.txt next to cwd (e.g. /path/to/app/output_files/c.txt when run from /path/to/app).
+        // Avoid /sd_card/... unless that mount exists; compare_outputs.py / golden use matrix_C_golden.txt.
+        if (writeOutputToFile(outC_bomapped, outC_bohdl, "./output_files/c.txt") != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
 
@@ -477,27 +358,22 @@ int main(int argc, char ** argv) {
         // ========================================================================
         // Print comprehensive timing summary for performance analysis
         // This helps identify bottlenecks and optimize the application
-        printf("\n=== OVERALL TIMING SUMMARY in Configuration: GEMM_SIZE_A=%d, GEMM_SIZE_AB=%d, GEMM_SIZE_B=%d, DIM_A=%d, DIM_AB=%d, DIM_B=%d ===\n", GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B, DIM_A, DIM_AB, DIM_B);
+        printf("\n=== OVERALL TIMING SUMMARY in Configuration: GEMM_SIZE_A=%d, GEMM_SIZE_AB=%d, GEMM_SIZE_B=%d, DIM_A=%d, DIM_AB=%d, DIM_B=%d, DATA_TYPE=%d (scalar bits), SIMPLE_OUT_C=%d ===\n",
+               GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B, DIM_A, DIM_AB, DIM_B, DATA_TYPE, SIMPLE_OUT_C);
         printDurationUsMs(phase1_us, "Phase 1: Device + XCLBIN initialization");
         printDurationUsMs(phase2_us, "Phase 2: Buffer creation + mapping");
         printDurationUsMs(phase3_us, "Phase 3: Data transfer + sync to device");
         printDurationUsMs(phase4_us, "Phase 4: Kernel + Graph creation");
-        printDurationUsMs(phase5_us, "Phase 5: Kernel launch (AVERAGE)");
-        printDurationUsMs(phase6_us, "PHASE 6 TOTAL-Compute: Graph run + DMA wait (AVERAGE) ***");
-        printDurationUsMs(phase7_us, "PHASE 7: Output sync ***");
-        printDurationUsMs(phase8_us, "PHASE 8: Output processing + file writing");
-        printDurationUsMs(phase5_us + phase6_us, "PHASES 5+6 COMBINED (AVERAGE): Kernel launch + Graph run + DMA wait *** [COMPARABLE TO PYTORCH]");
-        printDurationUsMs(phase3_us + phase5_us + phase6_us + phase7_us, "PHASES 3,5,6,7 TOTAL: Data transfer + Kernel launch +Graph run + DMA wait + Output sync ***");
+        printDurationUsMs(phase5_us, "Phase 5: Kernel launch");
+        printDurationUsMs(phase6_us, "Phase 6: Graph run + DMA wait");
+        printDurationUsMs(phase7_us, "Phase 7: Output sync");
+        printDurationUsMs(phase8_us, "Phase 8: Output processing + file writing");
+        printDurationUsMs(phase5_us + phase6_us, "Phases 5+6 combined: Kernel launch + graph run + DMA wait");
+        printDurationUsMs(phase3_us + phase5_us + phase6_us + phase7_us, "Phases 3+5+6+7: Data transfer + kernel + graph + output sync");
 
 
      long long total_program_us = getElapsedMicroseconds(start_time);
      printDurationUsMs(total_program_us, "TOTAL PROGRAM EXECUTION TIME");
-
-        // ========================================================================
-        // ML BENCHMARK COMPARISON - REMOVED TO SAVE MEMORY
-        // ========================================================================
-        // PyTorch benchmark and matrix input files removed to reduce memory usage
-        // This saves ~20 MB of SD card space and avoids additional RAM usage
 
         printf("\nProgram completed successfully!\n");
 

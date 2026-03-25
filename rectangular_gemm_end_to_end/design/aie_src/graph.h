@@ -10,7 +10,7 @@ using Xilinx DSP Library's matrix_mult_graph template. The graph is designed for
 Versal ACAP platforms with configurable data types and matrix dimensions.
 
 Key Features:
-- Configurable data types: int16, int32, float
+- Configurable data types: int16, int32
 - Scalable matrix dimensions via config.json
 - Streaming interface with DMA kernels
 - Cascade and split processing for large matrices
@@ -22,7 +22,7 @@ Architecture:
 - Matrix C: Output via SPLIT_B PLIO streams (one per split)
 
 Template Parameters:
-- data_t: Data type (int16/int32/float)
+- data_t: Data type (int16/int32)
 - DIM_A: Tile dimension for A dimension (rows of A, rows of C)
 - DIM_AB: Tile dimension for AB dimension (cols of A, rows of B)
 - DIM_B: Tile dimension for B dimension (cols of B, cols of C)
@@ -49,18 +49,15 @@ using namespace adf;
 // Data Type Configuration
 // ============================================================================
 // Dynamic data type definitions based on config.json DATA_TYPE setting
-// DSPLIB matrix_mult_graph supports: int16, int32, float
+// DSPLIB matrix_mult_graph: int16 / int32 only on this platform
 #if DATA_TYPE == 16  // int16
     typedef int16 data_t;                          // AI Engine int16 data type
     typedef int16_t int16;                         // Standard int16_t for compatibility
 #elif DATA_TYPE == 32  // int32
     typedef int32 data_t;                          // AI Engine int32 data type
     typedef int32_t int32;                         // Standard int32_t for compatibility
-#elif DATA_TYPE == 33  // float
-    typedef float data_t;                          // AI Engine float data type
-    typedef float float_t;                         // Standard float for compatibility
 #else
-    #error "Unsupported DATA_TYPE. Use 16 (int16), 32 (int32), or 33 (float)"
+    #error "Unsupported DATA_TYPE. Use 16 (int16) or 32 (int32)"
 #endif
 
 // ============================================================================
@@ -129,34 +126,15 @@ class GeMM: public adf::graph
          // Template parameters: <data_t, data_t, DIM_A, GEMM_SIZE_AB, DIM_B, 0, 0,
          //                      ROW_MAJOR, ROW_MAJOR, ROW_MAJOR, 0, 0, 0,
          //                      WINDOW_SIZE_A, WINDOW_SIZE_B, CASC_LN_AB>
-         //
-         // ELEMENT GENERATION CALCULATION:
-         // ===============================
-         // Per iteration, each split kernel produces: DIM_A × DIM_B elements
-         // Total elements per iteration (all splits): SPLIT_B × (DIM_A × DIM_B)
-         // 
-         // Output file structure:
-         //   - Each output file (c{i}.txt) contains: GEMM_SIZE_A rows × (GEMM_SIZE_B/SPLIT_B) columns
-         //   - Elements per file: GEMM_SIZE_A × (GEMM_SIZE_B / SPLIT_B)
-         //   - Elements per file from iterations: GRAPH_ITER_CNT × (DIM_A × DIM_B)
-         //
-         // Therefore, for correct output:
-         //   GRAPH_ITER_CNT = (GEMM_SIZE_A × (GEMM_SIZE_B / SPLIT_B)) / (DIM_A × DIM_B)
-         //   Each output file contains: GEMM_SIZE_A rows × (GEMM_SIZE_B / SPLIT_B) columns
-         //   Each iteration produces: DIM_A × DIM_B elements per file
-         //
-         // Example for 64×32×32 with DIM_A=16, DIM_B=16, SPLIT_A=2, SPLIT_B=2:
-         //   - Each output file: 64 rows × (32/2) = 64 × 16 = 1024 elements
-         //   - Each iteration: 16 × 16 = 256 elements per file
-         //   - Required GRAPH_ITER_CNT: (64 × 32 / 2) / (16 × 16) = 1024 / 256 = 4 iterations
-         //   - This correctly fills each output file with all 64 rows ✓
-         //
+         // GRAPH_ITER_CNT (Makefile) must satisfy:
+         //   (GEMM_SIZE_A * (GEMM_SIZE_B / SPLIT_B)) / (DIM_A * DIM_B)
+         // so each c{i}.txt fills GEMM_SIZE_A rows × (GEMM_SIZE_B/SPLIT_B) elements.
          xf::dsp::aie::blas::matrix_mult::matrix_mult_graph<
             data_t, data_t, DIM_A, GEMM_SIZE_AB, DIM_B, 0, 0,
             ROW_MAJOR, ROW_MAJOR, ROW_MAJOR, 0, 0, 0,
             WINDOW_SIZE_A, WINDOW_SIZE_B, CASC_LN_AB
          > mmult[SPLIT_B];
-                              
+
          // ====================================================================
          // Matrix A PLIO Interface Creation (Broadcast Pattern)
          // ====================================================================
@@ -224,10 +202,10 @@ class GeMM: public adf::graph
             // ================================================================
             // Connect PLIO streams to kernel ports and configure runtime ratios
             for(int k = 0; k < CASC_LN_AB; ++k) {
-               // Set runtime ratio for performance optimization
-               // 0.9 ratio allows for 10% margin in timing closure
-               adf::runtime<ratio>(mmult_kernels[k]) = 1.0;
-               
+               // Runtime ratio from gemm_config.h (config.json AIE_RUNTIME_RATIO).
+               // Higher → more AIE time share, often shorter Phase 6; if deadlock or errors, lower toward 0.75.
+               adf::runtime<ratio>(mmult_kernels[k]) = AIE_RUNTIME_RATIO;
+
                // Connect Matrix A input (broadcast to all splits)
                adf::connect<>(matA_inp[k].out[0], mmult[i].inA[k]);
                

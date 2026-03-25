@@ -54,6 +54,8 @@ help::
 	@echo "  make cleanall       # Clean everything"
 	@echo ""
 	@echo "Configuration: design/design_configs/config.json (TARGET, sizes, etc.); header format: design/design_configs/gemm_config.h"
+	@echo "  Validate (N,DIM,SPLIT,CASC): python3 design/design_configs/validate_gemm_config.py"
+	@echo "  Cubic grid (N x DIM x int16|int32): python3 design/design_configs/validate_gemm_config.py --suggest-cubic"
 	@echo "  TARGET (hw|hw_emu), GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B, DATA_TYPE, SPLIT, CASC_LN, PL_FREQ, etc."
 	@echo ""
 
@@ -63,11 +65,7 @@ print-%  : ; @echo $* = $($*)
 # ============================================================================
 # ENVIRONMENT CONFIGURATION
 # ============================================================================
-# DSPLIB_VITIS ?= /home/mgrailoo/Vitis_Libraries
 DSPLIB_ROOT = $(DSPLIB_VITIS)/dsp
-# PLATFORM ?= /media/josnu02/large_SDD/mgrailoo/platform_edge_hwemu/platform_edge_hwemu/export/platform_edge_hwemu/platform_edge_hwemu.xpfm
-# COMMON_IMAGE_VERSAL ?= /home/mgrailoo/xilinx-versal-common-v2024.1
-
 
 # ============================================================================
 # CONFIGURATION PARSING
@@ -76,6 +74,8 @@ DSPLIB_ROOT = $(DSPLIB_VITIS)/dsp
 #   1) design/design_configs/config.json  - single source of truth (TARGET, sizes, etc.)
 #   2) design/design_configs/gemm_config.h.
 CONFIG_JSON := design/design_configs/config.json
+# Relative to Makefile directory (same convention as CONFIG_JSON)
+CONFIG_VALIDATE := design/design_configs/validate_gemm_config.py
 
 
 # Core build parameters from config.json (TARGET is hw or hw_emu)
@@ -110,22 +110,23 @@ SPLIT := $(SPLIT_B)  # For Matrix C split (uses SPLIT_B)
 CASC_LN := $(CASC_LN_AB)
 GEMM_INSTS := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('GEMM_INSTS',1))")
 PL_FREQ := $(shell python3 -c "import json;v=json.load(open('$(CONFIG_JSON)')).get('PL_FREQ','312.5'); print(str(v).replace('.','_') if isinstance(v,(int,float)) else v)")
+# AIE kernel runtime ratio in (0,1]; from config.json (default 0.75)
+AIE_RUNTIME_RATIO := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));v=c.get('AIE_RUNTIME_RATIO',0.75);x=float(v) if isinstance(v,(int,float)) else float(str(v).strip());x=max(0.05,min(1.0,x));print(x)")
 ITER_CNT := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('ITER_CNT',1))")
 EN_TRACE := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('EN_TRACE',0))")
 USE_DDR_ONLY_MODE := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('USE_DDR_ONLY_MODE',0))")
 SIMPLE_OUT_C := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('SIMPLE_OUT_C',1))")
-# ENABLE_ML_BENCHMARKS removed - ML setup done at runtime
-
 # Data type configuration
 DATA_TYPE_STR := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('DATA_TYPE','int16'))")
-DATA_TYPE := $(shell python3 -c "import json; dt=json.load(open('$(CONFIG_JSON)')).get('DATA_TYPE','int16'); print(16 if dt=='int16' else 32 if dt=='int32' else 33 if dt=='float' else 16)")
-WRD_LN := $(shell python3 -c 'import json; d=json.load(open("$(CONFIG_JSON)")); wr=d.get("WRD_LN"); dt=d.get("DATA_TYPE","int16"); print(int(wr) if isinstance(wr,int) else (8 if dt=="int16" else 4 if dt=="int32" else 4 if dt=="float" else 8))')
+DATA_TYPE := $(shell python3 -c "import json,sys;d=json.load(open('$(CONFIG_JSON)'));dt=d.get('DATA_TYPE','int16');(dt=='float' and (print('Makefile ERROR: DATA_TYPE float is not supported; use int16 or int32.',file=sys.stderr) or sys.exit(1)));print(16 if dt=='int16' else 32 if dt=='int32' else 16)")
+# int32 requires WRD_LN=4 (128/32); int16 requires 8. Override wrong explicit WRD_LN with stderr warning.
+WRD_LN := $(shell python3 -c "import json,sys;d=json.load(open('$(CONFIG_JSON)'));wr=d.get('WRD_LN');dt=d.get('DATA_TYPE','int16');exp=8 if dt=='int16' else 4 if dt=='int32' else 8;v=int(wr) if isinstance(wr,int) else exp;bad=isinstance(wr,int) and dt in ('int16','int32') and v!=exp;(bad and print('Makefile: WRD_LN=%d incompatible with DATA_TYPE=%s (expected %d); using %d.'%(v,dt,exp,exp),file=sys.stderr));print(exp if bad else v)")
 N_SAMPLES := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('N_SAMPLES',1))")
 
-# Sub-tile sizes: SUB_TILE_A and SUB_TILE_AB = 4 for both int16 and int32; SUB_TILE_B = 4 for int16, 2 for int32
-SUB_TILE_A := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));print(c.get('SUB_TILE_A') or 4)")
-SUB_TILE_AB := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));print(c.get('SUB_TILE_AB') or 4)")
-SUB_TILE_B := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));b=c.get('SUB_TILE_B');dt=c.get('DATA_TYPE','int16');print(b if b is not None else (4 if dt=='int16' else 2))")
+# Sub-tiles: SUB_TILE_A, SUB_TILE_AB, SUB_TILE_B from config.json (default 4 each if omitted). int16: force B≠2→4.
+SUB_TILE_A := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));print(int(c['SUB_TILE_A']) if c.get('SUB_TILE_A') is not None else 4)")
+SUB_TILE_AB := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));print(int(c['SUB_TILE_AB']) if c.get('SUB_TILE_AB') is not None else 4)")
+SUB_TILE_B := $(shell python3 -c "import json,sys;c=json.load(open('$(CONFIG_JSON)'));b=c.get('SUB_TILE_B');dt=c.get('DATA_TYPE','int16');out=int(b) if b is not None else 4;bad16=b is not None and dt=='int16' and out==2;(bad16 and print('Makefile: SUB_TILE_B=2 incompatible with int16 (expected 4); using 4.',file=sys.stderr));print(4 if bad16 else out)")
 # Optional: tile memory size (written to gemm_config.h when present in config.json)
 TILE_MEM_BYTES := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));v=c.get('TILE_MEM_BYTES');print(int(v)) if v is not None else print('')" 2>/dev/null)
 
@@ -159,6 +160,28 @@ else
     GRAPH_ITER_CNT := $(shell echo "$$(( $(GEMM_SIZE_A) * $(GEMM_SIZE_B) / $(SPLIT_B) / $(DIM_A) / $(DIM_B) ))")
 endif
 
+# AXIS FIFO depth for dma_hls strmInp_from_C{0,1} when SIMPLE_OUT_C=0 (complex out_C).
+# Adaptive for cubic GEMM N in {32,64,128,256,512,1024} (and rectangular) across typical DIM/WRD_LN:
+#   plane  = 2*WORDS_PER_C_TILE + DIM_A*DIM_B
+#   slack  = max(128,min(2048,3*WPT+(DIM_A*DIM_B)//4))  — dual-PLIO / II slack, scales with tile
+#   stream_turn = WORDS_PER_C_BLOCK + tiles_per_block*WORDS_PER_C_TILE  (same as out_C block/tile read volume)
+#   extra  = max(256,min(49152,(5*stream_turn+11)//12))  — ~42% of stream workload, capped for HLS QoR
+#   depth  = clamp( max(plane+slack+extra, 4*WPT+(DIM_A*DIM_B)//WRD_LN+128), 65535 )
+FIFO_C_DEPTH_COMPLEX_VAL := $(shell python3 -c "import sys; ga,gb,sa,sb,da,db,wl=map(int,sys.argv[1:8]); \
+sa, sb = max(1, sa), max(1, sb); wl = wl if wl > 0 else 8; \
+wpt = max(1, (da * db) // wl); \
+wpb = (ga // sa) * ((gb // sb + wl - 1) // wl); \
+tr = (ga // sa) // max(1, da); tc = (gb // sb) // max(1, db); \
+tiles = max(1, tr * tc); \
+plane = 2 * wpt + da * db; \
+slack = max(128, min(2048, 3 * wpt + (da * db) // 4)); \
+stream_turn = wpb + tiles * wpt; \
+extra = max(256, min(49152, (stream_turn * 5 + 11) // 12)); \
+depth = plane + slack + extra; \
+floor = 4 * wpt + (da * db) // wl + 128; \
+depth = max(depth, floor); \
+depth = min(depth, 65535); \
+print(int(depth))" $(GEMM_SIZE_A) $(GEMM_SIZE_B) $(SPLIT_A) $(SPLIT_B) $(DIM_A) $(DIM_B) $(WRD_LN))
 
 # ============================================================================
 # DIRECTORY STRUCTURE
@@ -226,6 +249,7 @@ gemm_config.h: $(GEMM_CONFIG_HDR)
 # Auto-generate gemm_config.h from config.json;.
 # TARGET and all constants come from config.json (single source of truth).
 $(GEMM_CONFIG_HDR): force_header
+	@python3 $(CONFIG_VALIDATE) "$(CONFIG_JSON)" || { echo "Fix config.json or run: python3 $(CONFIG_VALIDATE) --suggest-cubic"; exit 1; }
 	@echo "Generating gemm_config.h from $(CONFIG_JSON)"
 	@echo "Debug GEMM_SIZE_A=$(GEMM_SIZE_A), GEMM_SIZE_AB=$(GEMM_SIZE_AB), GEMM_SIZE_B=$(GEMM_SIZE_B), DIM_A=$(DIM_A), DIM_AB=$(DIM_AB), DIM_B=$(DIM_B), SPLIT=$(SPLIT), GRAPH_ITER_CNT=$(GRAPH_ITER_CNT)"
 	@echo '#ifndef GEMM_CONFIG_H' > $(GEMM_CONFIG_HDR)
@@ -260,6 +284,8 @@ $(GEMM_CONFIG_HDR): force_header
 	@echo '// Calculated graph iteration count' >> $(GEMM_CONFIG_HDR)
 	@echo '// GRAPH_ITER_CNT = (GEMM_SIZE_A * GEMM_SIZE_B / SPLIT_B) / (DIM_A * DIM_B)' >> $(GEMM_CONFIG_HDR)
 	@echo '#define GRAPH_ITER_CNT $(GRAPH_ITER_CNT)' >> $(GEMM_CONFIG_HDR)
+	@echo '// AIE matrix_mult kernel runtime ratio (graph.h). Tune for Phase 6; typical 0.75–0.95.' >> $(GEMM_CONFIG_HDR)
+	@echo '#define AIE_RUNTIME_RATIO $(AIE_RUNTIME_RATIO)' >> $(GEMM_CONFIG_HDR)
 	@echo '// Additional constants needed by host app and other components' >> $(GEMM_CONFIG_HDR)
 	@echo '#define NUM_A_FILES $(CASC_LN_AB)' >> $(GEMM_CONFIG_HDR)
 	@echo '#define NUM_B_FILES $(shell echo "$$(( $(SPLIT_B) * $(CASC_LN_AB) ))")' >> $(GEMM_CONFIG_HDR)
@@ -285,6 +311,16 @@ $(GEMM_CONFIG_HDR): force_header
 	@echo '// Matrix C: Each split has (GEMM_SIZE_A * GEMM_SIZE_B) / SPLIT_B / WRD_LN elements' >> $(GEMM_CONFIG_HDR)
 	@echo '// Matrix C is split only in columns by SPLIT_B (all rows, split columns)' >> $(GEMM_CONFIG_HDR)
 	@echo '#define BASE_MATC_SZ ((GEMM_SIZE_A * GEMM_SIZE_B) / SPLIT_B / WRD_LN)' >> $(GEMM_CONFIG_HDR)
+	@echo '// SIMPLE_OUT_C=0 (dma_hls out_C): buffer sizes — hardcoded 512 caused silent overflow for large tiles/blocks' >> $(GEMM_CONFIG_HDR)
+	@echo '// WORDS_PER_C_TILE = (DIM_A*DIM_B)/WRD_LN; WORDS_PER_C_BLOCK = rows_per_block * ceil(cols_per_file/WRD_LN) per split' >> $(GEMM_CONFIG_HDR)
+	@echo '#define WORDS_PER_C_TILE ((DIM_A * DIM_B) / WRD_LN)' >> $(GEMM_CONFIG_HDR)
+	@echo '#define WORDS_PER_C_BLOCK (((GEMM_SIZE_A) / (SPLIT_A)) * (((GEMM_SIZE_B) / (SPLIT_B) + (WRD_LN) - 1) / (WRD_LN)))' >> $(GEMM_CONFIG_HDR)
+	@if [ "$(SIMPLE_OUT_C)" = "0" ]; then \
+		echo '#if !SIMPLE_OUT_C' >> $(GEMM_CONFIG_HDR); \
+		echo '// HLS AXIS C FIFO depth for complex out_C (integer; adaptive 32..1024 GEMM — see Makefile FIFO_C_DEPTH_COMPLEX_VAL)' >> $(GEMM_CONFIG_HDR); \
+		echo '#define FIFO_C_DEPTH_COMPLEX $(FIFO_C_DEPTH_COMPLEX_VAL)' >> $(GEMM_CONFIG_HDR); \
+		echo '#endif' >> $(GEMM_CONFIG_HDR); \
+	fi
 	@echo '// Output C tile grid (per split block): row-major when more cols than rows, else column-major' >> $(GEMM_CONFIG_HDR)
 	@echo '#define TILES_PER_BLOCK_ROW_C ((GEMM_SIZE_A / SPLIT_A) / DIM_A)' >> $(GEMM_CONFIG_HDR)
 	@echo '#define TILES_PER_BLOCK_COL_C ((GEMM_SIZE_B / SPLIT_B) / DIM_B)' >> $(GEMM_CONFIG_HDR)
@@ -319,13 +355,14 @@ DATAMOVER_KERNEL_SRC := $(PL_SRC_REPO)/$(DATAMOVER_KERNEL_TOP).cpp
 
 # AI Engine targets
 LIBADF_A := $(BUILD_TARGET_DIR)/libadf.a
-# LIBADF_A_SIM is now defined in graph_sim target to use libadf_sim.a (separate file)
 GRAPH_SRC_CPP := $(AIE_SRC_REPO)/graph.cpp
 
 # Application targets
 APP_ELF := gemm_aie_xrt.elf
 APP_ELF_INF_RUN := gemm_aie_xrt_inf_run.elf
 APP_SRC_CPP := $(HOST_APP_SRC)/gemm_aie_app.cpp $(HOST_APP_SRC)/gemm_utils.cpp
+# Explicit sources for host ELFs (no glob — avoids accidental deps on stray files in host_app_src)
+APP_HOST_DEPS := $(APP_SRC_CPP) $(HOST_APP_SRC)/gemm_utils.h
 AIE_CONTROL_CPP := $(BUILD_TARGET_DIR)/$(WORK_DIR)/ps/c_rts/aie_control_xrt.cpp
 
 # Hardware targets
@@ -441,26 +478,16 @@ PKG_FLAGS += --package.rootfs $(COMMON_IMAGE_VERSAL)/rootfs.ext4
 PKG_FLAGS += --package.kernel_image $(COMMON_IMAGE_VERSAL)/Image
 PKG_FLAGS += --package.boot_mode=sd --package.out_dir $(EMBEDDED_PACKAGE_OUT)
 PKG_FLAGS += --package.image_format=ext4 --package.defer_aie_run
-# FAT32 size: Default (512 MB) - Enough after removing large golden files
-# PKG_FLAGS += --package.ext4_fat32_size=3
 PKG_FLAGS += --package.sd_file $(BUILD_TARGET_DIR)/$(APP_ELF) $(BUILD_TARGET_DIR)/$(XSA) $(LIBADF_A)
 PKG_FLAGS += --package.sd_file $(BUILD_TARGET_DIR)/$(APP_ELF_INF_RUN)
 PKG_FLAGS += --package.sd_file $(EXEC_SCRIPTS_REPO)/$(EMBEDDED_EXEC_SCRIPT)
-# Removed large golden files (~2GB) to keep boot partition small and compatible
-# PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/a_golden.txt
 PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/b_golden.txt
-# PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/c_golden.txt
-# Matrix input files and PyTorch benchmark removed to save memory (~20 MB)
 PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/matrix_A_input.txt
-# PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/matrix_B_input.txt
+PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/matrix_C_golden.txt
+PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_BASE_DIR)/compare_outputs.py
+PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/design_configs/config.json
 PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/setup_ml_environment.sh
-# PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/RUNTIME_ML_SETUP_GUIDE.md  # File does not exist - commented out
-# PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/README_RUNTIME_ML.md
 PKG_FLAGS += --package.sd_file $(HOST_APP_SRC)/pytorch_benchmark.py
-# PKG_FLAGS += --package.sd_file $(HOST_APP_SRC)/numpy_benchmark.py
-
-# Include local PyTorch wheel cache in the SD card payload if it exists
-# DISABLED: PyTorch benchmark removed, so ml_wheels not needed (saves 112 MB)
 ifneq ($(wildcard $(ML_WHEELS_DIR)),)
 PKG_FLAGS += --package.sd_dir $(ML_WHEELS_DIR)
 endif
@@ -698,7 +725,7 @@ REG_GCC_FLAGS := $(GCC_FLAGS)
 REG_GCC_FLAGS += -DITER_CNT=$(ITER_CNT)
 REG_GCC_FLAGS += -DTARGET_STR=\"$(TARGET)\"
 
-$(BUILD_TARGET_DIR)/$(APP_ELF): $(HOST_APP_SRC)/* $(LIBADF_A)
+$(BUILD_TARGET_DIR)/$(APP_ELF): $(APP_HOST_DEPS) $(LIBADF_A)
 	@rm -rf $(BUILD_TARGET_DIR)/app_control.o $(BUILD_TARGET_DIR)/gemm_aie_app.o $(BUILD_TARGET_DIR)/gemm_utils.o $(BUILD_TARGET_DIR)/$(APP_ELF)
 	$(CXX) $(REG_GCC_FLAGS) $(GCC_INC_FLAGS) $(HOST_APP_SRC)/gemm_aie_app.cpp -o $(BUILD_TARGET_DIR)/gemm_aie_app.o $(GCC_INC_LIB) $(GCC_LIB)
 	$(CXX) $(REG_GCC_FLAGS) $(GCC_INC_FLAGS) $(HOST_APP_SRC)/gemm_utils.cpp -o $(BUILD_TARGET_DIR)/gemm_utils.o $(GCC_INC_LIB) $(GCC_LIB)
@@ -721,7 +748,7 @@ INF_RUN_GCC_FLAGS := $(GCC_FLAGS)
 INF_RUN_GCC_FLAGS += -DITER_CNT=-1
 INF_RUN_GCC_FLAGS += -DTARGET_STR=\"$(TARGET)\"
 
-$(BUILD_TARGET_DIR)/$(APP_ELF_INF_RUN): $(HOST_APP_SRC)/* $(LIBADF_A)
+$(BUILD_TARGET_DIR)/$(APP_ELF_INF_RUN): $(APP_HOST_DEPS) $(AIE_CONTROL_CPP) $(LIBADF_A)
 	@rm -rf $(BUILD_TARGET_DIR)/app_control_inf_run.o $(BUILD_TARGET_DIR)/gemm_aie_app_inf_run.o $(BUILD_TARGET_DIR)/gemm_utils_inf_run.o $(BUILD_TARGET_DIR)/$(APP_ELF_INF_RUN)
 	@# Fix accumulator types in aie_control_xrt.cpp for hw target
 	@if [ "$(DATA_TYPE)" = "16" ]; then \
@@ -732,8 +759,6 @@ $(BUILD_TARGET_DIR)/$(APP_ELF_INF_RUN): $(HOST_APP_SRC)/* $(LIBADF_A)
 		sed -i 's/output_stream<acc64>/output_stream<acc80>/g' $(AIE_CONTROL_CPP); \
 		sed -i 's/input_stream<acc64>/input_stream<acc80>/g' $(AIE_CONTROL_CPP); \
 		echo "Fixed accumulator types for int32 (acc64 -> acc80)"; \
-	elif [ "$(DATA_TYPE)" = "33" ]; then \
-		echo "Using acc64 for float (platform supports ACC64)"; \
 	else \
 		echo "Using default accumulator types for DATA_TYPE=$(DATA_TYPE)"; \
 	fi
@@ -746,10 +771,6 @@ $(BUILD_TARGET_DIR)/$(APP_ELF_INF_RUN): $(HOST_APP_SRC)/* $(LIBADF_A)
 	@echo "####################################"
 	@echo ""
 
-# ML Environment setup removed - done at runtime using setup_ml_environment.sh
-
-# PyTorch and NumPy benchmark targets removed - use setup_ml_environment.sh at runtime
-
 # =========================================================
 # Step 5. Package Generation 
 # ========================================================
@@ -761,20 +782,7 @@ $(BUILD_TARGET_DIR)/$(APP_ELF_INF_RUN): $(HOST_APP_SRC)/* $(LIBADF_A)
 # 	package/ directory
 # 	v++.package_summary
 # 	v++_package.log
-
-
-################################################################ for now
-# Prepare SD card with input files
-# prepare_sdcard: create_ioFiles
-# 	@echo "Preparing SD card with input files..."
-# 	mkdir -p $(EMBEDDED_PACKAGE_OUT)/input_files || { echo "Failed to create directory"; exit 1; }
-# 	@echo "Copying from: $(AIE_SIM_IO_DIR)/*"
-# 	@echo "To: $(EMBEDDED_PACKAGE_OUT)/input_files/"
-# 	cp -r $(AIE_SIM_IO_DIR)/* $(EMBEDDED_PACKAGE_OUT)/input_files/ || { echo "Failed to copy files"; exit 1; }
-# 	@echo "Files copied to SD card image"
-
-# Modify the package target to handle missing input files
-package: create_ioFiles application application_inf_run xsa 
+package: create_ioFiles application application_inf_run xsa
 	@echo "Checking for input files in $(AIE_SIM_IO_DIR)"
 	@if [ ! -d "$(AIE_SIM_IO_DIR)" ] || [ -z "$(ls -A $(AIE_SIM_IO_DIR) 2>/dev/null)" ]; then \
 		echo "Warning Input files directory is empty or does not exist. Creating it"; \
@@ -943,11 +951,9 @@ debug_aie_integration: graph
 # =========================================================
 sd_card: package
 
-run: sd_card run_emu # I added create_ioFiles, origin run did not have it
+run: sd_card run_emu
 
-# PyTorch benchmarking removed - use setup_ml_environment.sh --offline at runtime
-
-all: run report_metrics # vcd aiesim_profile 
+all: run report_metrics
 
 clean_tgt:
 	@echo "Cleaning $(TARGET) Target Build Dir..."
@@ -979,30 +985,8 @@ cleanall_reports: cleanall_vivado_reports cleanall_xpe_reports
 
 cleanall: cleanall_blds cleanall_reports
 
-#####################################################################
-# Impl strategies script...
-# Strategies Repo with the impl Script Has to be provided...
-BASE_OPTION       := 2
-IMPL_DEPTH_OPTION := 2
-PIPELINE_SIZE     := 500
-
-IMPL_STRATEGIES_TCL := $(STRATEGIES_REPO)/impl_strategies_explore_best3.tcl
-
-run_impl_strategies: $(IMPL_STRATEGIES_TCL) $(BUILD_TARGET_DIR)/_x/link/vivado/vpl/prj/prj.xpr
-ifeq ($(TARGET),hw_emu)
-	@echo "This build target (run_impl_strategies) not valid when design target is hw_emu"
-else
-	cd "$(BUILD_TARGET_DIR)"; \
-	vivado -mode tcl -source $(IMPL_STRATEGIES_TCL) \
-	"_x/link/vivado/vpl/prj/prj.xpr" -tclargs $(BASE_OPTION) $(IMPL_DEPTH_OPTION) $(PIPELINE_SIZE)
-endif
-
 open_vivado_proj: $(BUILD_TARGET_DIR)/_x/link/vivado/vpl/prj/prj.xpr
 	cd "$(BUILD_TARGET_DIR)"; \
 	vivado "_x/link/vivado/vpl/prj/prj.xpr"
-
-
-
-
 
 

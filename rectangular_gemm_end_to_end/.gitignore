@@ -1,0 +1,28 @@
+# Vitis / Vivado build tree (large; regenerate locally)
+build/
+
+# Vivado when launched with CWD = this directory
+vivado.jou
+vivado.log
+vivado_*.backup.jou
+vivado_*.backup.log
+
+# Local logs and reports from scripts / make tee
+logs/
+reports/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# Editor / OS
+*.swp
+*~
+.DS_Store
+
+# Cursor / VS Code (local IDE; do not commit)
+.cursor/
+.cursorignore
+.vscode/

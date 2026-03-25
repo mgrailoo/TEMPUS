@@ -42,6 +42,9 @@
 # - PATH: Updated with tool paths
 # - CXX: Cross-compiler for A72 processor
 # - SDKTARGETSYSROOT: Target system root
+#
+# GEMM sub-tiles (int16/int32) are defined in design/design_configs/config.json
+# (SUB_TILE_A/AB/B; default 4×4×4). Regenerate aiesim_data with plioGen after changes.
 # ============================================================================
 
 # ============================================================================

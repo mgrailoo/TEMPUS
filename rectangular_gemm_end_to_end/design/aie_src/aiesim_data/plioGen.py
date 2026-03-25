@@ -13,8 +13,7 @@ Elements within sub-tiles | Row-major | Row-major | Row-major
 Sub-tiles within tiles    | Row-major | Row-major | Row-major
 Tiles within blocks       | Row-major | Column-major | Column-major
 
-Sub-tile sizes: SUB_TILE_A=4, SUB_TILE_AB=4 for both int16 and int32. Matrix C (and B):
-  int16: SUB_TILE_B=4 (4×4). int32: SUB_TILE_B=2 (4×2).
+Sub-tile sizes: SUB_TILE_A=4, SUB_TILE_AB=4; SUB_TILE_B from config (default 4 for int16 and int32).
 
 C output stream (int16, 8×8 tiles, WRD_LN=8): each word = 4×2 block; sub-tiles row-major,
 within each 4×4 sub-tile two words: (0,0)-(3,1) then (0,2)-(3,3), then next sub-tile.
@@ -37,7 +36,7 @@ Examples:
 Configuration:
     All parameters are read from config.json including:
     - GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B, DIM, SPLIT, CASC_LN, ITER_CNT, etc.
-    - DATA_TYPE (int16, int32, float)
+    - DATA_TYPE (int16, int32)
     - MATRIX_A_FILE, MATRIX_B_FILE (paths to input matrices)
     - RANDOM_SEED (for reproducible random matrix generation)
     - If matrix files are empty or not found, random matrices are generated

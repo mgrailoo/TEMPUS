@@ -90,8 +90,8 @@ void verifyBufferConfiguration() {
         printf("WARNING: GEMM_SIZE_B (%d) is not divisible by DIM_B (%d)\n", GEMM_SIZE_B, DIM_B);
     }
     
-    // Verify GRAPH_ITER_CNT calculation
-    int expected_iter_cnt = (GEMM_SIZE_A * GEMM_SIZE_B) / (DIM_A * DIM_B) / SPLIT_B;
+    // Verify GRAPH_ITER_CNT (same grouping as Makefile / gemm_config.h / plioGen)
+    int expected_iter_cnt = (GEMM_SIZE_A * GEMM_SIZE_B / SPLIT_B) / (DIM_A * DIM_B);
     printf("Expected GRAPH_ITER_CNT: %d\n", expected_iter_cnt);
     printf("Actual GRAPH_ITER_CNT: %d\n", GRAPH_ITER_CNT);
 }
@@ -129,7 +129,6 @@ void printValidTileDimensions() {
     int sub_m = 4, sub_k = 4, sub_n = 4;
     if (DATA_TYPE == 16) { sub_m=4; sub_k=4; sub_n=4; }
     else if (DATA_TYPE == 32) { sub_m=4; sub_k=4; sub_n=2; }
-    else if (DATA_TYPE == 33) { sub_m=4; sub_k=4; sub_n=2; }
     int kseg = GEMM_SIZE_AB / CASC_LN_AB;
     printf("Valid (TP_DIM_A, TP_DIM_AB, TP_DIM_B): ");
     if ((GEMM_SIZE_AB % sub_k)==0 && (kseg % sub_k)==0) {
@@ -295,10 +294,6 @@ void printInputBuffers(const ap_int<128>* inA_bomapped, const ap_int<128>* inB_b
             } else if (DATA_TYPE == 32) {  // int32
                 ap_int<32> val = (inA_bomapped[i] >> (j * 32)) & 0xFFFFFFFF;
                 printf("%8d ", (int32_t)val);
-            } else if (DATA_TYPE == 33) {  // float
-                uint32_t float_bits = (inA_bomapped[i] >> (j * 32)) & 0xFFFFFFFF;
-                float val = *reinterpret_cast<float*>(&float_bits);
-                printf("%8.4f ", val);
             }
         }
         printf("\n");
@@ -314,10 +309,6 @@ void printInputBuffers(const ap_int<128>* inA_bomapped, const ap_int<128>* inB_b
             } else if (DATA_TYPE == 32) {  // int32
                 ap_int<32> val = (inB_bomapped[i] >> (j * 32)) & 0xFFFFFFFF;
                 printf("%8d ", (int32_t)val);
-            } else if (DATA_TYPE == 33) {  // float
-                uint32_t float_bits = (inB_bomapped[i] >> (j * 32)) & 0xFFFFFFFF;
-                float val = *reinterpret_cast<float*>(&float_bits);
-                printf("%8.4f ", val);
             }
         }
         printf("\n");
@@ -333,11 +324,7 @@ void printOutputBuffer(const ap_int<128>* outC_bomapped, size_t aligned_matc_siz
     for (int i = 0; i < std::min(16, (int)(aligned_matc_size / sizeof(ap_int<128>))); ++i) {
         printf("C[%2d]: ", i);
         for (int j = 0; j < WRD_LN; ++j) {
-            if (DATA_TYPE == 33) {  // float
-                uint32_t float_bits = (outC_bomapped[i] >> (j * 32)) & 0xFFFFFFFF;
-                float val = *reinterpret_cast<float*>(&float_bits);
-                printf("%8.4f ", val);
-            } else if (DATA_TYPE == 4) {  // int4
+            if (DATA_TYPE == 4) {  // int4
                 ap_int<4> val = (outC_bomapped[i] >> (j * 4)) & 0xF;
                 printf("%2d ", (int8_t)val);
             } else if (DATA_TYPE == 8) {  // int8
@@ -774,30 +761,49 @@ int launchKernel(xrt::kernel& dma_hls_khdl,
     return EXIT_SUCCESS;
 }
 
+// Pick first writable output directory for c.txt / split dumps.
+// 1) preferred_dir from caller (e.g. ./output_files/ from ./output_files/c.txt)
+// 2) ./output_files/ under current working directory (same folder you run gemm_aie_xrt.elf from)
+// 3) /media/output_files/ (hw), /mnt/output_files/ (emu or legacy mounts)
+static std::string pick_gemm_output_dir(const char* preferred_dir) {
+    std::vector<std::string> dirs;
+    if (preferred_dir && preferred_dir[0] != '\0') {
+        std::string p(preferred_dir);
+        while (!p.empty() && (p.back() == '/' || p.back() == '\\'))
+            p.pop_back();
+        if (!p.empty())
+            dirs.push_back(p + "/");
+    }
+    dirs.push_back(std::string("./output_files/"));
+#ifdef TARGET_HW
+    dirs.push_back(std::string("/media/output_files/"));
+#endif
+    dirs.push_back(std::string("/mnt/output_files/"));
+
+    for (const auto& d : dirs) {
+        struct stat st;
+        if (stat(d.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+            return d;
+        }
+        if (mkdir(d.c_str(), 0755) == 0)
+            return d;
+        if (errno == EEXIST && stat(d.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+            return d;
+    }
+    return std::string();
+}
+
 bool write_split_txt_from_bo(const ap_int<128>* src,
                              size_t num_words,
                              const char* preferred_dir,
                              const char* out_name) {
     if (!src || !out_name) return false;
 
-    std::vector<std::string> dirs = {
-        std::string(preferred_dir ? preferred_dir : ""),
-        std::string("/mnt/output_files/"),
-        std::string("./output_files/")
-    };
-
-    std::string out_dir;
-    for (const auto& d : dirs) {
-        struct stat st;
-        if (stat(d.c_str(), &st) == 0) { out_dir = d; break; }
-        if (mkdir(d.c_str(), 0755) == 0 || errno == EEXIST) { out_dir = d; break; }
-    }
+    std::string out_dir = pick_gemm_output_dir(preferred_dir);
     if (out_dir.empty()) {
         fprintf(stderr, "Error creating any output directory for split dump\n");
         return false;
     }
-    if (!out_dir.empty() && out_dir.back() != '/')
-        out_dir += '/';
 
     std::string out_path = out_dir + std::string(out_name);
     std::ofstream out(out_path);
@@ -808,13 +814,7 @@ bool write_split_txt_from_bo(const ap_int<128>* src,
 
     for (size_t w = 0; w < num_words; ++w) {
         for (int j = 0; j < WRD_LN; ++j) {
-            if (DATA_TYPE == 33) {  // float
-                uint32_t float_bits = (src[w] >> (j * 32)) & 0xFFFFFFFF;
-                float val = *reinterpret_cast<float*>(&float_bits);
-                char buffer[32];
-                snprintf(buffer, sizeof(buffer), "%.4f", val);
-                out << buffer;
-            } else if (DATA_TYPE == 16) {  // int16
+            if (DATA_TYPE == 16) {  // int16
                 ap_int<16> current_val = (src[w] >> (j * 16)) & 0xFFFF;
                 out << (int16_t)current_val;
             } else if (DATA_TYPE == 32) {  // int32
@@ -839,19 +839,8 @@ bool write_split_txt_from_bo_interleaved(const ap_int<128>* src, size_t total_wo
     const size_t words_per_split = total_words / NUM_C_FILES;  // total_words/2 when SPLIT_B=2
     if (total_words != words_per_split * NUM_C_FILES) return false;
 
-    std::vector<std::string> dirs = {
-        std::string(preferred_dir ? preferred_dir : ""),
-        std::string("/mnt/output_files/"),
-        std::string("./output_files/")
-    };
-    std::string out_dir;
-    for (const auto& d : dirs) {
-        struct stat st;
-        if (stat(d.c_str(), &st) == 0) { out_dir = d; break; }
-        if (mkdir(d.c_str(), 0755) == 0 || errno == EEXIST) { out_dir = d; break; }
-    }
+    std::string out_dir = pick_gemm_output_dir(preferred_dir);
     if (out_dir.empty()) return false;
-    if (!out_dir.empty() && out_dir.back() != '/') out_dir += '/';
 
     auto write_one_split = [&](const char* out_name, int split_idx) {
         std::string path = out_dir + out_name;
@@ -866,12 +855,6 @@ bool write_split_txt_from_bo_interleaved(const ap_int<128>* src, size_t total_wo
                 } else if (DATA_TYPE == 32) {
                     ap_int<32> v = (src[word_idx] >> (j * 32)) & 0xFFFFFFFF;
                     out << (int32_t)v;
-                } else if (DATA_TYPE == 33) {
-                    uint32_t bits = (src[word_idx] >> (j * 32)) & 0xFFFFFFFF;
-                    float val = *reinterpret_cast<float*>(&bits);
-                    char buf[32];
-                    snprintf(buf, sizeof(buf), "%.4f", val);
-                    out << buf;
                 }
                 if (j < WRD_LN - 1) out << ' ';
             }
@@ -910,8 +893,8 @@ int executeComputation(xrt::graph& gemm_aie_gr, xrt::run& dma_hls_rhdl,
 int writeOutputToFile(ap_int<128>* outC_bomapped, xrt::bo& outC_bohdl,
                      const char* output_filename) {
     
-    // Extract directory from filename
-    std::string output_dir = std::string(output_filename);
+    // Extract directory from filename (basename is ignored: C is always written as c.txt for golden compare)
+    std::string output_dir = std::string(output_filename ? output_filename : "./output_files/c.txt");
     size_t last_slash = output_dir.find_last_of('/');
     if (last_slash != std::string::npos) {
         output_dir = output_dir.substr(0, last_slash + 1);
@@ -919,9 +902,8 @@ int writeOutputToFile(ap_int<128>* outC_bomapped, xrt::bo& outC_bohdl,
         output_dir = "./";
     }
     
-    // Write output file (write_c_txt_from_bo expects const char* for directory)
-    write_c_txt_from_bo(outC_bomapped, EXACT_MATC_SZ, output_dir.c_str());
-    
+    if (!write_c_txt_from_bo(outC_bomapped, EXACT_MATC_SZ, output_dir.c_str()))
+        return EXIT_FAILURE;
     return EXIT_SUCCESS;
 }
 
@@ -975,22 +957,12 @@ bool load_golden_into_vector(const std::string& filepath,
         
         // Dynamic word length based on data type
         for (int k = 0; k < WRD_LN; ++k) {
-            if (DATA_TYPE == 33) {  // float
-                float v = 0.0f;
-                if (!(iss >> v)) v = 0.0f;
-                // Pack float as 32-bit integer representation
-                uint32_t float_bits = *reinterpret_cast<uint32_t*>(&v);
-                packed.range((k+1)*32-1, k*32) = float_bits;
-            } else {
-                int v = 0;
-                if (!(iss >> v)) v = 0;
-                
-                // Pack based on data type
-                if (DATA_TYPE == 16) {  // int16
-                    packed.range((k+1)*16-1, k*16) = static_cast<int16_t>(v);
-                } else if (DATA_TYPE == 32) {  // int32
-                    packed.range((k+1)*32-1, k*32) = static_cast<int32_t>(v);
-                }
+            int v = 0;
+            if (!(iss >> v)) v = 0;
+            if (DATA_TYPE == 16) {  // int16
+                packed.range((k+1)*16-1, k*16) = static_cast<int16_t>(v);
+            } else if (DATA_TYPE == 32) {  // int32
+                packed.range((k+1)*32-1, k*32) = static_cast<int32_t>(v);
             }
         }
         dst[idx++] = packed;
@@ -1018,22 +990,12 @@ bool load_golden_into_ddr_buffer(const std::string& filepath,
         
         // Dynamic word length based on data type
         for (int k = 0; k < WRD_LN; ++k) {
-            if (DATA_TYPE == 33) {  // float
-                float v = 0.0f;
-                if (!(iss >> v)) v = 0.0f;
-                // Pack float as 32-bit integer representation
-                uint32_t float_bits = *reinterpret_cast<uint32_t*>(&v);
-                packed.range((k+1)*32-1, k*32) = float_bits;
-            } else {
-                int v = 0;
-                if (!(iss >> v)) v = 0;
-                
-                // Pack based on data type
-                if (DATA_TYPE == 16) {  // int16
-                    packed.range((k+1)*16-1, k*16) = static_cast<int16_t>(v);
-                } else if (DATA_TYPE == 32) {  // int32
-                    packed.range((k+1)*32-1, k*32) = static_cast<int32_t>(v);
-                }
+            int v = 0;
+            if (!(iss >> v)) v = 0;
+            if (DATA_TYPE == 16) {  // int16
+                packed.range((k+1)*16-1, k*16) = static_cast<int16_t>(v);
+            } else if (DATA_TYPE == 32) {  // int32
+                packed.range((k+1)*32-1, k*32) = static_cast<int32_t>(v);
             }
         }
         dst[idx++] = packed;
@@ -1112,20 +1074,12 @@ bool load_raw_matrix_into_ddr_buffer(const std::string& filepath,
             
             // Read WRD_LN elements from this line (one word)
             for (int j = 0; j < WRD_LN; ++j) {
-                if (DATA_TYPE == 33) {  // float
-                    float v = 0.0f;
-                    if (!(iss >> v)) v = 0.0f;
-                    uint32_t float_bits = *reinterpret_cast<uint32_t*>(&v);
-                    current_word.range((j+1)*32-1, j*32) = float_bits;
-                } else {
-                    int v = 0;
-                    if (!(iss >> v)) v = 0;
-                    
-                    if (DATA_TYPE == 16) {  // int16
-                        current_word.range((j+1)*16-1, j*16) = static_cast<int16_t>(v);
-                    } else if (DATA_TYPE == 32) {  // int32
-                        current_word.range((j+1)*32-1, j*32) = static_cast<int32_t>(v);
-                    }
+                int v = 0;
+                if (!(iss >> v)) v = 0;
+                if (DATA_TYPE == 16) {  // int16
+                    current_word.range((j+1)*16-1, j*16) = static_cast<int16_t>(v);
+                } else if (DATA_TYPE == 32) {  // int32
+                    current_word.range((j+1)*32-1, j*32) = static_cast<int32_t>(v);
                 }
                 elements_read++;
             }
@@ -1144,20 +1098,12 @@ bool load_raw_matrix_into_ddr_buffer(const std::string& filepath,
             
             // Read elements from this row
             while (col < GEMM_SIZE_AB) {
-                if (DATA_TYPE == 33) {  // float
-                    float v = 0.0f;
-                    if (!(iss >> v)) v = 0.0f;
-                    uint32_t float_bits = *reinterpret_cast<uint32_t*>(&v);
-                    current_word.range((element_in_word+1)*32-1, element_in_word*32) = float_bits;
-                } else {
-                    int v = 0;
-                    if (!(iss >> v)) v = 0;
-                    
-                    if (DATA_TYPE == 16) {  // int16
-                        current_word.range((element_in_word+1)*16-1, element_in_word*16) = static_cast<int16_t>(v);
-                    } else if (DATA_TYPE == 32) {  // int32
-                        current_word.range((element_in_word+1)*32-1, element_in_word*32) = static_cast<int32_t>(v);
-                    }
+                int v = 0;
+                if (!(iss >> v)) v = 0;
+                if (DATA_TYPE == 16) {  // int16
+                    current_word.range((element_in_word+1)*16-1, element_in_word*16) = static_cast<int16_t>(v);
+                } else if (DATA_TYPE == 32) {  // int32
+                    current_word.range((element_in_word+1)*32-1, element_in_word*32) = static_cast<int32_t>(v);
                 }
                 
                 element_in_word++;
@@ -1251,13 +1197,21 @@ int loadMatrixDataDirectToDDR(ap_int<128>* inA_bomapped, ap_int<128>* inB_bomapp
             if (raw_mata_words > 0) {
                 ap_int<128> w = inA_bomapped[0];
                 printf("  A first word (first %d elems): ", WRD_LN);
+#if DATA_TYPE == 16
                 for (int j = 0; j < WRD_LN; ++j) printf("%d ", (int)((w >> (j * 16)) & 0xFFFF));
+#else
+                for (int j = 0; j < WRD_LN; ++j) printf("%d ", (int)w.range((j + 1) * 32 - 1, j * 32));
+#endif
                 printf("(expect first line of matrix_A_input.txt)\n");
             }
             if (exact_matb_sz > 0) {
                 ap_int<128> w = inB_bomapped[0];
                 printf("  B first word (first %d elems): ", WRD_LN);
+#if DATA_TYPE == 16
                 for (int j = 0; j < WRD_LN; ++j) printf("%d ", (int)((w >> (j * 16)) & 0xFFFF));
+#else
+                for (int j = 0; j < WRD_LN; ++j) printf("%d ", (int)w.range((j + 1) * 32 - 1, j * 32));
+#endif
                 printf("(expect first line of b_golden.txt)\n");
             }
         }
@@ -1314,19 +1268,14 @@ bool write_c_txt_from_bo(const ap_int<128>* src,
         }
     }
 
-    std::vector<std::string> dirs = {
-        std::string(preferred_dir ? preferred_dir : ""),
-        std::string("/mnt/output_files/"),
-        std::string("./output_files/")
-    };
-    std::string out_dir;
-    for (const auto& d : dirs) {
-        struct stat st;
-        if (stat(d.c_str(), &st) == 0) { out_dir = d; break; }
-        if (mkdir(d.c_str(), 0755) == 0 || errno == EEXIST) { out_dir = d; break; }
-    }
+    std::string out_dir = pick_gemm_output_dir(preferred_dir);
     if (out_dir.empty()) {
-        fprintf(stderr, "Error creating any output directory (tried preferred, /mnt/output_files/, ./output_files/)\n");
+        fprintf(stderr,
+                "Error creating any output directory (tried preferred, ./output_files/, "
+#ifdef TARGET_HW
+                "/media/output_files/, "
+#endif
+                "/mnt/output_files/)\n");
         return false;
     }
 
@@ -1342,13 +1291,7 @@ bool write_c_txt_from_bo(const ap_int<128>* src,
     for (size_t word_idx = 0; word_idx < elements; ++word_idx) {
         const ap_int<128>& word = src[word_idx];
         for (int j = 0; j < WRD_LN; ++j) {
-            if (DATA_TYPE == 33) {
-                uint32_t float_bits = (word >> (j * 32)) & 0xFFFFFFFF;
-                float val = *reinterpret_cast<const float*>(&float_bits);
-                char buffer[32];
-                snprintf(buffer, sizeof(buffer), "%.4f", val);
-                out << buffer;
-            } else if (DATA_TYPE == 16) {
+            if (DATA_TYPE == 16) {
                 ap_int<16> v = (word >> (j * 16)) & 0xFFFF;
                 out << (int16_t)v;
             } else if (DATA_TYPE == 32) {
@@ -1368,13 +1311,7 @@ bool write_c_txt_from_bo(const ap_int<128>* src,
             size_t buf_idx = r * words_per_row + cw;
             const ap_int<128>& word = src[buf_idx];
             for (int j = 0; j < WRD_LN; ++j) {
-                if (DATA_TYPE == 33) {
-                    uint32_t float_bits = (word >> (j * 32)) & 0xFFFFFFFF;
-                    float val = *reinterpret_cast<const float*>(&float_bits);
-                    char buffer[32];
-                    snprintf(buffer, sizeof(buffer), "%.4f", val);
-                    out << buffer;
-                } else if (DATA_TYPE == 16) {
+                if (DATA_TYPE == 16) {
                     ap_int<16> v = (word >> (j * 16)) & 0xFFFF;
                     out << (int16_t)v;
                 } else if (DATA_TYPE == 32) {

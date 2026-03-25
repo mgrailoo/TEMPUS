@@ -51,7 +51,9 @@ fi
 CONFIG_PATH="$ROOT_DIR/design/design_configs/config.json"
 LOG_DIR="$ROOT_DIR/logs"
 REPORTS_DIR="$ROOT_DIR/reports"
-AIE_DATA_DIR="$ROOT_DIR/design/aie_src/aiesim_data"
+# AI Engine sim I/O: plioGen.py, compare_outputs.py, gemm_MxKxN_ioFiles/ (matches Makefile AIE_SIM_IO_BASE_DIR)
+AIE_SRC_DIR="$ROOT_DIR/design/aie_src"
+AIE_DATA_DIR="$AIE_SRC_DIR/aiesim_data"
 BUILD_ROOT="$ROOT_DIR/build"
 
 mkdir -p "$LOG_DIR" "$REPORTS_DIR"
@@ -136,7 +138,7 @@ get_wrd_ln() {
     local dt="$1"
     case "$dt" in
         int16) echo 8;;
-        int32|float) echo 4;;
+        int32) echo 4;;
         *) echo 8;;
     esac
 }
@@ -145,7 +147,7 @@ get_subtiles() {
     local dt="$1"
     case "$dt" in
         int16) echo "4 4 4";;
-        int32|float) echo "4 4 2";;
+        int32) echo "4 4 4";;
         *) echo "4 4 4";;
     esac
 }
@@ -171,6 +173,10 @@ ensure_defaults() {
     fi
     DIM="$(json_get DIM)"; DIM="${DIM:-16}"
     DATA_TYPE="$(json_get DATA_TYPE)"; DATA_TYPE="${DATA_TYPE:-int16}"
+    if [[ "$DATA_TYPE" == "float" ]]; then
+        echo "ERROR: DATA_TYPE float is not supported; use int16 or int32." >&2
+        exit 1
+    fi
     TILE_MEM_BYTES="$(json_get TILE_MEM_BYTES)"; TILE_MEM_BYTES="${TILE_MEM_BYTES:-32768}"
     SPLIT="$(json_get SPLIT)"; SPLIT="${SPLIT:-2}"
     CASC_LN="$(json_get CASC_LN)"; CASC_LN="${CASC_LN:-8}"
@@ -180,11 +186,14 @@ ensure_defaults() {
     EN_TRACE="$(json_get EN_TRACE)"; EN_TRACE="${EN_TRACE:-0}"
     PL_FREQ="$(json_get PL_FREQ)"; PL_FREQ="${PL_FREQ:-312.5}"
     ENABLE_ML_BENCHMARKS="$(json_get ENABLE_ML_BENCHMARKS)"; ENABLE_ML_BENCHMARKS="${ENABLE_ML_BENCHMARKS:-1}"
+    local AIE_RUNTIME_RATIO
+    AIE_RUNTIME_RATIO="$(json_get AIE_RUNTIME_RATIO)"; AIE_RUNTIME_RATIO="${AIE_RUNTIME_RATIO:-0.75}"
     json_set_many \
       TARGET "$TARGET" GEMM_SIZE_A "$GEMM_SIZE_A" GEMM_SIZE_AB "$GEMM_SIZE_AB" GEMM_SIZE_B "$GEMM_SIZE_B" DIM "$DIM" DATA_TYPE "$DATA_TYPE" \
       TILE_MEM_BYTES "$TILE_MEM_BYTES" SPLIT "$SPLIT" CASC_LN "$CASC_LN" \
       ITER_CNT "$ITER_CNT" N_SAMPLES "$N_SAMPLES" GEMM_INSTS "$GEMM_INSTS" \
-      EN_TRACE "$EN_TRACE" PL_FREQ "$PL_FREQ" ENABLE_ML_BENCHMARKS "$ENABLE_ML_BENCHMARKS"
+      EN_TRACE "$EN_TRACE" PL_FREQ "$PL_FREQ" ENABLE_ML_BENCHMARKS "$ENABLE_ML_BENCHMARKS" \
+      AIE_RUNTIME_RATIO "$AIE_RUNTIME_RATIO"
 }
 
 ensure_derived() {
@@ -193,26 +202,52 @@ ensure_derived() {
     DATA_TYPE="$(json_get DATA_TYPE)"; GEMM_SIZE_A="$(json_get GEMM_SIZE_A)"; GEMM_SIZE_AB="$(json_get GEMM_SIZE_AB)"; GEMM_SIZE_B="$(json_get GEMM_SIZE_B)"; DIM="$(json_get DIM)"
     SPLIT_B="$(json_get SPLIT_B)"; SPLIT_B="${SPLIT_B:-$(json_get SPLIT)}"; SPLIT_B="${SPLIT_B:-2}"
     ITER_CNT="$(json_get ITER_CNT)"
+    local expected_wl
+    expected_wl="$(get_wrd_ln "$DATA_TYPE")"
     WRD_LN="$(json_get WRD_LN)"
+    if [[ -z "${WRD_LN:-}" ]]; then
+        WRD_LN="$expected_wl"
+    elif [[ "$WRD_LN" != "$expected_wl" ]] && [[ "$DATA_TYPE" =~ ^(int16|int32)$ ]]; then
+        echo "[WARN] WRD_LN=$WRD_LN inconsistent with DATA_TYPE=$DATA_TYPE (expected $expected_wl); correcting to $expected_wl (128b packing)." >&2
+        WRD_LN="$expected_wl"
+    fi
     SUB_TILE_M="$(json_get SUB_TILE_M)"
     SUB_TILE_K="$(json_get SUB_TILE_K)"
     SUB_TILE_N="$(json_get SUB_TILE_N)"
-    if [[ -z "${WRD_LN:-}" ]]; then WRD_LN="$(get_wrd_ln "$DATA_TYPE")"; fi
     if [[ -z "${SUB_TILE_M:-}" || -z "${SUB_TILE_K:-}" || -z "${SUB_TILE_N:-}" ]]; then
         read -r SUB_TILE_M SUB_TILE_K SUB_TILE_N < <(get_subtiles "$DATA_TYPE")
     fi
-    local GRAPH_ITER_CNT
-    if [[ "${ITER_CNT}" == "-1" ]]; then
-        GRAPH_ITER_CNT=-1
-    else
-        local DIM_A DIM_B
-        DIM_A="$(json_get DIM_A)"; DIM_A="${DIM_A:-$DIM}"
-        DIM_B="$(json_get DIM_B)"; DIM_B="${DIM_B:-$DIM}"
-        local den=$(( DIM_A * DIM_B * (SPLIT_B>0?SPLIT_B:1) ))
-        (( den == 0 )) && den=1
-        GRAPH_ITER_CNT=$(( (GEMM_SIZE_A * GEMM_SIZE_B) / den ))
+    # int16: SUB_TILE_N/B must not be 2 (correct to 4). int32: keep config (default 4×4×4).
+    read -r _exp_m _exp_k _exp_n < <(get_subtiles "$DATA_TYPE")
+    if [[ "$DATA_TYPE" == "int16" && "${SUB_TILE_N:-}" == "2" ]]; then
+        echo "[WARN] SUB_TILE_N/B=2 with int16; correcting to $_exp_n." >&2
+        SUB_TILE_N="$_exp_n"
     fi
-    json_set_many WRD_LN "$WRD_LN" SUB_TILE_M "$SUB_TILE_M" SUB_TILE_K "$SUB_TILE_K" SUB_TILE_N "$SUB_TILE_N" GRAPH_ITER_CNT "$GRAPH_ITER_CNT"
+    # Makefile / gemm_config.h use SUB_TILE_A, SUB_TILE_AB, SUB_TILE_B (same as M, K, N)
+    # Same as Makefile / plio_utils / gemm_config.h: min(DIM, GEMM/SPLIT) for DIM_A/DIM_B,
+    # then GRAPH_ITER_CNT = (A*B/SPLIT_B)/(DIM_A*DIM_B)
+    local GRAPH_ITER_CNT
+    GRAPH_ITER_CNT="$(python3 -c "
+import json, sys
+p = sys.argv[1]
+c = json.load(open(p, encoding='utf-8'))
+if int(c.get('ITER_CNT', 1)) == -1:
+    print(-1)
+    raise SystemExit(0)
+A = int(c['GEMM_SIZE_A'])
+B = int(c['GEMM_SIZE_B'])
+d = int(c.get('DIM', 16))
+Sa = int(c.get('SPLIT_A') or c.get('SPLIT', 2))
+Sb = int(c.get('SPLIT_B') or c.get('SPLIT', 2))
+DIM_A = min(d, A // max(1, Sa))
+DIM_B = min(d, B // max(1, Sb))
+den = max(1, DIM_A * DIM_B)
+print((A * B // max(1, Sb)) // den)
+" "$CONFIG_PATH")"
+    json_set_many WRD_LN "$WRD_LN" \
+        SUB_TILE_M "$SUB_TILE_M" SUB_TILE_K "$SUB_TILE_K" SUB_TILE_N "$SUB_TILE_N" \
+        SUB_TILE_A "$SUB_TILE_M" SUB_TILE_AB "$SUB_TILE_K" SUB_TILE_B "$SUB_TILE_N" \
+        GRAPH_ITER_CNT "$GRAPH_ITER_CNT"
 }
 
 show_config() {
@@ -366,6 +401,20 @@ generate_clean_summary() {
     DIM="$(json_get DIM)"
     DATA_TYPE="$(json_get DATA_TYPE)"
     TARGET="$(json_get TARGET)"
+    # Same tile rules as Makefile / plioGen / gemm_config.h (DIM_AB is not min(DIM, …))
+    local DIM_A_R DIM_AB_R DIM_B_R
+    read -r DIM_A_R DIM_AB_R DIM_B_R < <(python3 -c "
+import json, sys
+c = json.load(open(sys.argv[1], encoding='utf-8'))
+d = int(c.get('DIM', 16))
+A = int(c['GEMM_SIZE_A'])
+B = int(c['GEMM_SIZE_B'])
+Gab = int(c['GEMM_SIZE_AB'])
+Sa = int(c.get('SPLIT_A') or c.get('SPLIT', 2))
+Sb = int(c.get('SPLIT_B') or c.get('SPLIT', 2))
+Cl = int(c.get('CASC_LN_AB') or c.get('CASC_LN', 8))
+print(min(d, A // max(1, Sa)), Gab // max(1, Cl), min(d, B // max(1, Sb)))
+" "$CONFIG_PATH")
     
     # Find report files - try reports/ first, then fallback to build/
     local found_reports_dir=""
@@ -592,7 +641,7 @@ SUMMARY_EOF
 ## 9. DESIGN CONFIGURATION
 
 - **Matrix Dimensions:** A=${GEMM_SIZE_A}, AB=${GEMM_SIZE_AB}, B=${GEMM_SIZE_B}
-- **Tile Dimensions:** DIM_A=${DIM}, DIM_AB=${DIM}, DIM_B=${DIM}
+- **Tile Dimensions:** DIM_A=${DIM_A_R}, DIM_AB=${DIM_AB_R} (= GEMM_SIZE_AB / CASC_LN_AB), DIM_B=${DIM_B_R} (config DIM=${DIM})
 - **Data Type:** ${DATA_TYPE}
 - **Build Target:** ${TARGET}
 
@@ -605,26 +654,64 @@ SUMMARY_EOF
 # ---------- New: local clean and metrics extraction ----------
 clean_local() {
     echo "[INFO] Cleaning local generated files..."
+    # Option 8 (extract metrics) writes these at repo root — remove first so they always clear under option 2
+    for f in "$ROOT_DIR/metrics_summary.txt" "$ROOT_DIR/RESOURCE_SUMMARY.md"; do
+        if [[ -f "$f" || -L "$f" ]]; then
+            if rm -f "$f"; then echo "Removed file: $f"
+            else echo "[WARN] Could not remove file: $f" >&2
+            fi
+        fi
+    done
+    # All GEMM IO dirs under aiesim_data (e.g. gemm_512x512x512_ioFiles, gemm_64x64x64_ioFiles), any M×K×N
+    shopt -s nullglob
+    for p in "$AIE_DATA_DIR"/gemm_*_ioFiles; do
+        if [[ -d "$p" ]]; then
+            if rm -rf "$p"; then
+                echo "Removed directory: $p"
+            else
+                echo "[WARN] Could not remove directory: $p" >&2
+            fi
+        fi
+    done
+    shopt -u nullglob
+    # Fallback: find catches odd names if the glob ever misses (symlinks, unusual chars)
+    while IFS= read -r -d '' p; do
+        [[ -d "$p" ]] || continue
+        if rm -rf "$p"; then
+            echo "Removed directory: $p"
+        else
+            echo "[WARN] Could not remove directory: $p" >&2
+        fi
+    done < <(find "$AIE_DATA_DIR" -maxdepth 1 -mindepth 1 -type d -name 'gemm_*_ioFiles' -print0 2>/dev/null || true)
+
     local paths=(
-        "$AIE_DATA_DIR/gemm_$(json_get GEMM_SIZE_A)x$(json_get GEMM_SIZE_AB)x$(json_get GEMM_SIZE_B)_ioFiles"
-        "$AIE_DATA_DIR/c.txt"
+        "$AIE_SRC_DIR/c.txt"
         "$AIE_DATA_DIR/log.txt"
         "$AIE_DATA_DIR/plioGen.log"
         "$AIE_DATA_DIR/build_log.txt"
         "$AIE_DATA_DIR/compare_outputs.log"
         "$ROOT_DIR/build_log.txt"
+        "$ROOT_DIR/metrics_summary.txt"   # from menu option 8 (extract metrics)
+        "$ROOT_DIR/RESOURCE_SUMMARY.md"   # from option 8 / sync reports
         "$BUILD_ROOT"
-        "$LOG_DIR/build_output.log"
+        "$LOG_DIR"
+        "$REPORTS_DIR"
     )
     for p in "${paths[@]}"; do
         if [[ -e "$p" ]]; then
             if [[ -d "$p" ]]; then
-                rm -rf "$p" && echo "Removed directory: $p"
+                if rm -rf "$p"; then echo "Removed directory: $p"
+                else echo "[WARN] Could not remove directory: $p" >&2
+                fi
             else
-                rm -f "$p" && echo "Removed file: $p"
+                if rm -f "$p"; then echo "Removed file: $p"
+                else echo "[WARN] Could not remove file: $p" >&2
+                fi
             fi
         fi
     done
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    mkdir -p "$REPORTS_DIR" 2>/dev/null || true
     echo "[INFO] Local cleanup completed."
 }
 
@@ -971,7 +1058,7 @@ configure_menu() {
         echo "1) Set GEMM_SIZE_A"
         echo "2) Set GEMM_SIZE_AB"
         echo "3) Set GEMM_SIZE_B"
-        echo "4) Set DATA_TYPE (int16|int32|float)"
+        echo "4) Set DATA_TYPE (int16|int32)"
         echo "5) Set DIM"
         echo "6) Set TARGET (hw|hw_emu)"
         echo "7) Auto-derive WRD_LN and sub-tiles"
@@ -997,7 +1084,7 @@ main_menu() {
         echo ""
         echo "Local Workflow Menu (Ubuntu)"
         echo "1) Configure settings"
-        echo "2) Clean build (local)"
+        echo "2) Clean build (local) — removes gemm_*_ioFiles, build/, logs/, reports/, metrics_summary.txt, RESOURCE_SUMMARY.md, stray logs"
         echo "3) Show current configuration"
         echo "4) Build (make all/run)"
         echo "5) Run hardware emulator (launch + run app)"

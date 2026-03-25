@@ -1,273 +1,265 @@
-# Versal AI-ML Edge Engine GEMM Implementation
+# Rectangular GEMM (End-to-End) on Versal AI Engine ML
 
-An implementation of General Matrix Multiply (GEMM) operations using Xilinx AI/ML Engine on Versal ACAP platforms. This project demonstrates high-performance matrix multiplication with configurable dimensions, data types, and optimization strategies.
+End-to-end **general matrix multiply (GEMM)** for Versal ACAP: PL HLS DMA moves data between DDR and the **AI Engine ML** array, with a host XRT application, optional PyTorch/NumPy benchmarks on the board, and Vivado-oriented reporting flows.
 
+This directory is a self-contained Vitis design (Makefile + `design/` sources). It is intended as a **reference / starting point**, not a guaranteed production deliverable.
 
-## 🚀 Features
+---
 
-- **Rectangular Matrix Support**: Support for rectangular GEMM operations (A×AB×B format)
-- **Multiple Matrix Sizes**: Support for square matrices (32×32 to 1024×1024) and rectangular matrices (e.g., 2048×64×8)
-- **Multiple Data Types**: int16, and int32 support
-- **AI/ML Engine Optimization**: Leverages Versal AI/ML Engine array for maximum performance
-- **HLS Kernels**: Custom DMA kernels for efficient data movement
-- **ML Benchmarking**: Built-in PyTorch and NumPy performance comparisons
-- **Comprehensive Reporting**: Vivado utilization and power analysis
-- **Cross-Platform**: Works on both hardware emulation and real hardware
+## Contents
 
-## 📁 Project Structure
+- [Features](#features)
+- [Repository layout](#repository-layout)
+- [Prerequisites](#prerequisites)
+- [Tested hardware (example)](#tested-hardware-example)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Common Makefile targets](#common-makefile-targets)
+- [Hardware vs emulation](#hardware-vs-emulation)
+- [Correctness and PL/AIE data layout](#correctness-and-plaie-data-layout)
+- [Architecture notes (AIEML)](#architecture-notes-aieml)
+- [Performance](#performance)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
+
+---
+
+## Features
+
+- **Rectangular GEMM** \(C = A \times B\) with explicit **GEMM_SIZE_A × GEMM_SIZE_AB × GEMM_SIZE_B**.
+- **Integer data types**: **`int16` and `int32`** are both supported end-to-end (host, HLS DMA, AI Engine graph, PLIO goldens). The main packing difference is **`WRD_LN`**: **8** elements per 128-bit PLIO word for int16, **4** for int32. The Makefile corrects a wrong `WRD_LN` for the chosen type (with a warning). Float is not supported on this path (see [Architecture notes](#architecture-notes-aieml)). **Newer Vitis / Vitis DSP Library releases may add or expose additional `matrix_mult` data types** (e.g. floating-point or other precisions on AI Engine ML); enabling those here would require graph, DMA, host, and golden-generator changes beyond this README.
+- **Sub-tiles**: **`SUB_TILE_A`**, **`SUB_TILE_AB`**, **`SUB_TILE_B`** default to **4×4×4** for int16 and int32 when omitted; **`DIM_B`** (and related tile sizes) must be divisible by **`SUB_TILE_B`**. After changing type or sub-tiles, regenerate simulation I/O (see [Correctness](#correctness-and-plaie-data-layout)).
+- **Tiling and decomposition**: configurable split/cascade/tile parameters via `design/design_configs/config.json`.
+- **HLS DMA kernel** (`design/pl_src/dma_hls.cpp`) for streaming A/B in and C out.
+- **Optional ML benchmarks**: PyTorch and NumPy scripts under `design/host_app_src/` (when enabled in config).
+- **Reports**: utilization / power-style flows via Makefile targets (hardware-oriented).
+- **Targets**: `hw_emu` (emulation) and `hw` (board).
+
+---
+
+## Repository layout
 
 ```
-Versal_AIE_GEMM/
-├── README.md                    # This file
-├── .gitignore                  # Git ignore rules
-├── Makefile                    # Build system
-├── design/                     # Source code
-│   ├── aie_src/               # AI Engine sources
-│   │   ├── graph.cpp          # Main AI Engine graph
-│   │   ├── graph.h            # Graph header
-│   │   └── aiesim_data/       # Simulation data
-│   ├── pl_src/                # HLS kernels
-│   │   ├── dma_hls.cpp        # DMA kernel implementation
-│   │   └── dma_hls.h          # DMA kernel header
-│   ├── host_app_src/          # Host application
-│   │   ├── gemm_aie_app.cpp   # Main host application
-│   │   ├── gemm_utils.cpp     # Utility functions
-│   │   ├── pytorch_benchmark.py
-│   │   └── numpy_benchmark.py
-│   ├── design_configs/        # Configuration files
-│   ├── system_configs/        # System configuration
-│   └── vivado_metrics_scripts/ # Vivado reporting
-├── scripts/                   # Utility scripts
-│   ├── setup_platform_ml.sh
-│   ├── sync_and_run.ps1
-│   ├── fix_aie_checksum.tcl
-│   └── ...
-├── examples/                  # Example configurations
-│   ├── configs/              # Configuration examples
-│   └── Commands              # Command examples
-└── platform_edge_hwemu/      # Platform files
+rectangular_gemm_end_to_end/
+├── README.md
+├── Makefile
+├── sync_and_run.sh            # Optional: config sync, build, compare (paths may need editing)
+├── Mahdieh_env_setup.sh       # Example Vitis/platform env (edit paths for your site)
+├── design/
+│   ├── aie_src/                 # AI Engine graph (graph.cpp, graph.h), constraints, aiesim data
+│   ├── pl_src/                  # HLS DMA (dma_hls.cpp / dma_hls.h)
+│   ├── host_app_src/            # Host app (gemm_aie_app.cpp, gemm_utils.*), benchmarks
+│   ├── design_configs/          # config.json, generated gemm_config.h
+│   ├── system_configs/          # e.g. x1.cfg connectivity
+│   ├── directives/              # Compiler / HLS directives as used by the flow
+│   ├── exec_scripts/            # Runtime helper scripts packaged or used with the design
+│   ├── vivado_metrics_scripts/  # Reporting helpers
+│   ├── ml_wheels/               # Optional offline PyTorch wheels (see ml_wheels/README.md)
+│   └── setup_ml_environment.sh  # Board-side ML env setup (also copied to SD card package)
+├── scripts/                     # e.g. metrics extraction (PowerShell)
+├── logs/                        # Build logs (local; typically gitignored in parent repo)
+├── reports/                     # Generated reports (local)
+└── build/                       # Vitis build output (local; do not commit large artifacts)
 ```
 
-## 🛠️ Prerequisites
+If you publish **only** this folder on GitHub, clone it and work from the repository root (the directory that contains this `README.md` and `Makefile`).
 
-- **Xilinx Vitis 2024.1** or later
-- **Vivado 2024.1** or later
-- **Versal ACAP Development Board** (for hardware testing)
-- **Python 3.8+** (for ML benchmarking)
-- **Git** (for version control)
+---
 
-## 🚀 Quick Start
+## Prerequisites
 
-### 1. Clone and Setup
-```bash
-git clone <your-repo-url>
-cd Versal_AIE_GEMM
-```
+- **AMD Vitis** (tested with **2024.1** or compatible; align Vivado/Vitis versions).
+- **AMD Vivado** (matching Vitis release).
+- A **Versal** board and **platform** (`.xpfm`) supported by your tool version — you must set **`PLATFORM`** to that platform path for the Makefile (see [Quick start](#quick-start)).
+- **Python 3.8+** (JSON parsing in the Makefile, benchmarks, utilities).
+- **Xilinx/AMD environment**: `source <Vitis_install>/settings64.sh` (and any board-specific setup your organization uses).
 
-### 2. Configure Your Design
-Edit `design/design_configs/config.json`:
-```json
-{
-  "TARGET": "hw",
-  "GEMM_SIZE_A": 2048,
-  "GEMM_SIZE_AB": 64,
-  "GEMM_SIZE_B": 8,
-  "DIM": 16,
-  "DATA_TYPE": "int16",
-  "_comment_DATA_TYPE": "int32 or int16",
-  "TILE_MEM_BYTES": 32768,
-  "SPLIT_A": 2,
-  "SPLIT_B": 2,
-  "CASC_LN_AB": 8,
-  "_comment_SPLIT_A": "Decomposition factor for rows of Matrix A",
-  "_comment_SPLIT_B": "Decomposition factor for columns of Matrix B",
-  "_comment_CASC_LN_AB": "Decomposition factor for AB dimension (columns of A, rows of B)",
-  "ITER_CNT": 1,
-  "N_SAMPLES": 1,
-  "GEMM_INSTS": 1,
-  "EN_TRACE": 0,
-  "PL_FREQ": 312.5,
-  "ENABLE_ML_BENCHMARKS": 1,
-  "WRD_LN": 8,
-  "_comment_WRD_LN": "8 for int16 and 4 for int32 elements per 128-bit PLIO",
-  "SUB_TILE_A": 4,
-  "SUB_TILE_AB": 4,
-  "SUB_TILE_B": 4,
-  "_comment_SUB_TILE": "Sub-tile dimensions: A (rows of Matrix A), AB (cols of A / rows of B), B (cols of Matrix B)",
-  "GRAPH_ITER_CNT": 128,
-  "_comment_GRAPH_ITER_CNT": "Calculated automatically: (GEMM_SIZE_A * GEMM_SIZE_B / SPLIT_B) / (DIM_A * DIM_B)"
-}
-```
+---
 
-**Important**: All three `GEMM_SIZE_A`, `GEMM_SIZE_AB`, and `GEMM_SIZE_B` values are **REQUIRED** and must be explicitly provided. No default values are used.
+## Tested hardware (example)
 
-### 3. Build and Run
-For having the PyTorch matmul result on the board, run `./setup_ml_environment.sh --offline` before running `gemm_aie_xrt.elf`.  
-In `--offline` mode the script installs PyTorch (and torchvision/torchaudio) **from the preloaded wheels in `design/ml_wheels/`**, so the board does **not** need an Internet connection.
+Bring-up for this tree has been done on **AMD Versal AI Edge** silicon (**VE2302**), using **Vitis 2024.1** with a **custom edge platform** (`.xpfm`), e.g. the path shown in **`Mahdieh_env_setup.sh`** (`platform_edge_hwemu/.../platform_edge_hwemu.xpfm`). Linked `xclbin`/XSA names in the build flow may include **`ve2302`** as the part shorthand.
 
+That platform path is **machine-specific**; fork/clone users must point **`PLATFORM`** at **their** installed or rebuilt `.xpfm`. Other **Versal** parts (AI Core, AI Edge, premium) are not validated here but may work if you provide a matching platform and satisfy AI Engine / PL resource and timing.
+
+---
+
+## Quick start
+
+### 1. Clone
 
 ```bash
-# Build for hardware emulation
-make run
-
-# Build for hardware
-make run TARGET=hw
-
-# Generate reports
-make report_metrics
+git clone https://github.com/<your-org>/<your-repo>.git
+cd <your-repo>/Versal_AI_ML_Engines_GEMM/rectangular_gemm_end_to_end   # adjust path if your layout differs
 ```
 
-## 📊 Performance Results
+If this repo is the **root** of your GitHub project, `cd` into that root instead.
 
-### Rectangular Matrix Performance
-
-| Matrix Size (A×AB×B)  | AIE engine time (16 AIE cores, INT16) |Pytorch CPU (ARM A72, dual-core, float),                     |
-|-----------------------|---------------------------------------|-------------------------------------------------------------|
-
-
-## 🔧 Configuration Options
-
-### Matrix Dimensions
-- **GEMM_SIZE_A**: Rows of Matrix A (e.g., 2048) - **REQUIRED**
-- **GEMM_SIZE_AB**: Columns of A / Rows of B (e.g., 64) - **REQUIRED**
-- **GEMM_SIZE_B**: Columns of Matrix B (e.g., 8) - **REQUIRED**
-- **DIM_A**: Tile dimension for A dimension (calculated as min(DIM, GEMM_SIZE_A/SPLIT_A))
-- **DIM_AB**: Tile dimension for AB dimension (always GEMM_SIZE_AB // CASC_LN_AB)
-- **DIM_B**: Tile dimension for B dimension (calculated as min(DIM, GEMM_SIZE_B/SPLIT_B))
-- **DIM**: Base tile dimension used for calculations (default: 16)
-- **SPLIT_A**: Decomposition factor for rows of Matrix A (default: 2)
-- **SPLIT_B**: Decomposition factor for columns of Matrix B (default: 2)
-- **CASC_LN_AB**: Cascade levels for AB dimension (default: 8)
-
-**Note**: All three GEMM_SIZE values (A, AB, B) must be explicitly provided in `config.json`. No default values are used.
-
-### Data Types
-- **int16**: 16-bit integer (best performance)
-- **int32**: 32-bit integer (higher precision)
-
-### Build Targets
-- **hw_emu**: Hardware emulation (faster iteration)
-- **hw**: Real hardware (final deployment)
-
-## 📈 Available Targets
+### 2. Tool environment and platform
 
 ```bash
-# Build targets
-make help                    # Show all available targets
-make run                     # Build and run emulation
-make sd_card                 # Build complete design
-make kernels                 # Build HLS kernels only
-make graph                   # Build AI Engine graph only
-make application             # Build host application only
+source /tools/Xilinx/Vitis/2024.1/settings64.sh   # example path
 
-# Analysis targets
-make report_metrics          # Generate Vivado reports
-make vcd                     # Generate VCD and XPE files
-
-
-# Cleanup targets
-make clean_tgt              # Clean specific target
-make cleanall               # Clean all build artifacts
+# Required: path to your Versal base platform (.xpfm)
+export PLATFORM=/path/to/your_platform.xpfm
 ```
 
-## 🧪 Testing and Validation
+Without `PLATFORM`, the Makefile cannot invoke the AI Engine compiler or `v++` linking.
 
-### Hardware Emulation
+### 3. Configure the design
+
+Edit **`design/design_configs/config.json`**. The Makefile **requires** explicit **`GEMM_SIZE_A`**, **`GEMM_SIZE_AB`**, and **`GEMM_SIZE_B`** (no silent defaults for those three).
+
+The checked-in file is the authoritative example; it includes fields such as `TARGET`, `DATA_TYPE`, `DIM`, `SPLIT_A` / `SPLIT_B`, `CASC_LN_AB`, `SUB_TILE_*`, `GRAPH_ITER_CNT`, `PL_FREQ`, `AIE_RUNTIME_RATIO`, `USE_DDR_ONLY_MODE`, `SIMPLE_OUT_C`, and `ENABLE_ML_BENCHMARKS`. After editing sizes, run a build so **`GRAPH_ITER_CNT`** and **`gemm_config.h`** stay consistent (the Makefile updates `GRAPH_ITER_CNT` in `config.json` when generating the header).
+
+Validate tiling before long builds:
+
 ```bash
+python3 design/design_configs/validate_gemm_config.py design/design_configs/config.json
+```
+
+For cubic sizes and valid `(N, DIM)` pairs: `python3 design/design_configs/validate_gemm_config.py --suggest-cubic`.
+
+### 4. Build and run
+
+```bash
+make help              # discover targets
+
+# Emulation (faster iteration)
 make run TARGET=hw_emu
-# Runs in QEMU virtual environment
-# Includes ML benchmarking
-# Generates performance reports
-```
 
-### Hardware Testing
-```bash
+# Hardware SD card package (long build)
 make run TARGET=hw
-# Generates SD card image
-# Deploy to Versal board
-# Run on actual hardware
+# or: make sd_card
 ```
 
-### End‑to‑end GEMM correctness (dma_hls.cpp)
+### 5. PyTorch on the board (optional)
 
-The rectangular, end‑to‑end GEMM path (from `matrix_A_input.txt` / `matrix_B_input.txt` to `c.txt`) relies on the **PL DMA kernel** in `design/pl_src/dma_hls.cpp`. Recent changes aligned the PL implementation with the Python golden model:
+On the **SD card root** (as packaged), run:
 
-- **Matrix A equivalence (inp_A)**: the DDR buffer `matA` is a simple row‑major `GEMM_SIZE_A × GEMM_SIZE_AB` matrix, identical to `matrix_A_input.txt`. The `inp_A` kernel only **cascades** this A into tiles/streams (a0_casc*); no values are changed, just re‑ordered for the AI Engine.
-- **Matrix C equivalence (out_C)**: the AI Engine produces cascaded/tiled C on two streams (C0/C1). The `out_C` kernel **de‑cascades and de‑tiles** these streams back into a single row‑major `matC` buffer that is numerically equal to the Python `A @ B` matrix saved as `matrix_C_golden.txt`.
-- **C stream layout match**: `out_C` now assumes the same layout as `plioGen.py`:
-  - `c0` = left half of C, `c1` = right half (column‑split by `SPLIT_B`).
-  - Blocks: `(GEMM_SIZE_A / SPLIT_A) × (GEMM_SIZE_B / SPLIT_B)` per split.
-  - Tiles within each block: `DIM_A × DIM_B`, processed **column‑major** (tile_col outer, tile_row inner).
-  - Inside each tile: sub‑tiles row‑major, and **elements inside each sub‑tile row‑major**, chunked into 128‑bit words (`WRD_LN` elements/word).
-- **Merge C0/C1 back to matC**: for SIMPLE_OUT_C=0, `out_C` de‑tiles C0/C1 into `matC` so that:
-  - `matC` is **row‑major** with `GEMM_SIZE_A × GEMM_SIZE_B` elements, identical to `matrix_C_golden.txt` produced by `plioGen.py`.
-- **What was fixed**: older code assumed a hard‑wired “4×2 word layout” for C sub‑tiles that did not match the Python generator, so `c.txt` and the golden files could disagree even when A/B were correct. The updated `out_C` uses the same generic row‑major sub‑tile ordering as `plio_utils.generate_split_output_files`, enabling true end‑to‑end comparison:
-  - SIMPLE_OUT_C=1 → `c.txt` vs `c_golden.txt` (buffer‑order, interleaved C0/C1).
-  - SIMPLE_OUT_C=0 → `c.txt` vs `matrix_C_golden.txt` (raw row‑major C = A×B).
-
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Xilinx for the Versal ACAP platform and AI Engine
-- Vitis Libraries for DSP functions
-- Open source community for benchmarking tools
-
-## 📞 Support
-
-For questions and support:
-- Create an issue in this repository
-
-
-**Built for high-performance AI/ML acceleration on Versal ACAP**
-
-
-## 🏗️ Architecture Support
-
-This implementation targets **AIEML (AI Engine ML)** hardware generation, which maps to AIE‑ML (v1) `__AIE_ARCH__ == 20` and thus:
-- **Enables 64-bit accumulators** (`__SUPPORTS_ACC64__`) and 32-bit accumulators (`__SUPPORTS_ACC32__`)
-- **Provides ML features including BF16 support** (`_SUPPORTS_BFLOAT16_`)
-- **Versal ACAP Platform**: Optimized for Versal edge and premium series devices
-
-For reference, on AIEML and related architectures the accumulator support is defined as:
-
-```c
-#if (__AIE_ARCH__ == 20) || (__AIE_ARCH__ == 21) || (__AIE_ARCH__ == 22) || \
-    (__AIEARCH__ == 20) || (__AIEARCH__ == 21) || (__AIEARCH__ == 22)
-#define __SUPPORTS_ACC32__
-#define __SUPPORTS_ACC64__
-#endif
+```bash
+./setup_ml_environment.sh --offline
 ```
 
-### Data type support on AIE‑MLv1 / AIE‑MLv2
+**`--offline`** installs PyTorch (and dependencies) from the wheel tree under **`design/ml_wheels/`** only—**no Internet on the board is required**—which enables the optional **on-board PyTorch GEMM benchmarking** path (same shapes as the AIE run when **`ENABLE_ML_BENCHMARKS`** is on in **`config.json`**; see **`design/host_app_src/pytorch_benchmark.py`**). Run this once **before** **`gemm_aie_xrt.elf`** if you want that comparison. For details on the wheel layout, see **`design/ml_wheels/README.md`**. In the source tree, the script lives at **`design/setup_ml_environment.sh`**.
 
-- On AIE‑ML generations (ACC64/ACC32 enabled), the BF16 scalar type exists and is usable at the application boundary; however, with the DSPLIB L1/L2 `matrix_mult` we are using, native GEMM for float×float or bf16×bf16 on ACC64 is not implemented. This is why float/bf16 selections fail in compilation with “no supported modes.”
+---
 
-- For `matrix_mult.hpp` ACC64 path (AIE‑ML, AIE‑MLv2):
-  - Supported: integer types (`int16`, `cint16`, `int32`, `cint32`).
-  - Not supported in this kernel path: floating‑point types (`float`, `cfloat`).
+## Configuration
 
-- General rule (from DSPLIB docs for this kernel family):
-  - Integer×Integer is supported (e.g., `int16×int16`, `int32×int32`, and complex integer variants).
-  - Float×Float is supported only on older ACC48 paths (not ACC64 in this header).
-  - Mixed Integer×Float is not supported.
+| Area | Key ideas |
+|------|-----------|
+| **Sizes** | `GEMM_SIZE_A`, `GEMM_SIZE_AB`, `GEMM_SIZE_B` define \(A_{M\times K}\), \(B_{K\times N}\). |
+| **Tiling** | `DIM`, `SPLIT_A`, `SPLIT_B`, `CASC_LN_AB` drive tile dimensions `DIM_A`, `DIM_AB`, `DIM_B` (computed in the Makefile). |
+| **Data type** | `DATA_TYPE`: `int16` or `int32`. **`WRD_LN`**: 8 (int16) or 4 (int32); Makefile can override a mismatch with a warning. Host and `dma_hls` use `DATA_TYPE` for element width in `ap_int<128>` words. |
+| **Sub-tiles** | `SUB_TILE_A`, `SUB_TILE_AB`, `SUB_TILE_B` (and legacy `SUB_TILE_M/K/N` in JSON): use **4×4×4** for both int16 and int32 in this project unless you know your flow needs otherwise. **`SIMPLE_OUT_C=0`** uses deeper AXIS FIFO depths derived from geometry. |
+| **Output layout** | `SIMPLE_OUT_C`: `1` = compare `c.txt` to `c_golden.txt`; `0` = full de-tile to row-major `matrix_C_golden.txt` semantics. |
+| **Runtime** | `AIE_RUNTIME_RATIO` adjusts AI Engine kernel `adf::runtime<ratio>` (see comment in `config.json`). |
+| **DDR** | `USE_DDR_ONLY_MODE` forces DDR-only buffering behavior for experiments. |
 
+**Build target** is `TARGET`: `hw` or `hw_emu` in `config.json` (you can also pass `TARGET=` on the `make` command line where supported).
 
-### Hardware Configuration
-The `aie_primitive.json` file contains the board-specific AI Engine configuration:
-- **AI Engine Array**: 17 columns with compute tiles in row 2
-- **Memory Tiles**: Located in row 1 for data storage
-- **Shim Tiles**: Rows 0-1 for data movement between PL and AI Engine
-- **Hardware Generation**: AIEML (v1) (`__AIE_ARCH__ == 20`, ACC64/BF16 capable)
+---
 
+## Common Makefile targets
+
+```bash
+make help           # All targets and short descriptions
+make sd_card        # Full flow: kernels, AIE graph, link, host app, package
+make run            # Build and run (per TARGET)
+make kernels        # HLS kernels only
+make graph          # AI Engine graph only
+make application    # Host application only
+make report_metrics # Vivado-style utilization reports (hardware-oriented)
+make vcd            # VCD / XPE-oriented flows where applicable
+make cleanall       # Remove build artifacts
+```
+
+---
+
+## Hardware vs emulation
+
+| Mode | Typical use |
+|------|-------------|
+| **`hw_emu`** | QEMU-based hardware emulation; quicker feedback, not final performance. |
+| **`hw`** | Bitstream + SD image for a real Versal board; use your organization’s programming and boot procedure. |
+
+---
+
+## Correctness and PL/AIE data layout
+
+The end-to-end path (host-loaded files through **`c.txt`**) must match the Python golden flow in **`design/aie_src/aiesim_data/`** (`plioGen.py`, `plio_utils.py`, `compare_outputs.py`) and **`design/pl_src/dma_hls.cpp`**.
+
+- **Matrix A**: the host loads **`matrix_A_input.txt`** as row-major \( \text{GEMM\_SIZE\_A} \times \text{GEMM\_SIZE\_AB} \) packed into 128-bit words; **`inp_A`** streams cascade order consistent with **`a0_casc*.txt`** from `plioGen.py`.
+- **Matrix B**: the host loads **`b_golden.txt`** (interleaved cascade lines); **`inp_B`** matches the **`b*_casc*.txt`** set used to build that file.
+- **Matrix C**: the AI Engine produces **C0/C1** streams. **`SIMPLE_OUT_C=1`**: simple **`out_C`** passes stream words through; compare **`c.txt`** to **`c_golden.txt`** (interleaved c0/c1 word order). **`SIMPLE_OUT_C=0`**: complex **`out_C`** de-tiles into DDR **`matC`**; the host writes row-major **`c.txt`** comparable to **`matrix_C_golden.txt`**.
+
+Regenerate golden files whenever you change **`GEMM_SIZE_*`**, **`DATA_TYPE`**, **`SUB_TILE_*`**, splits, cascade, or effective **`DIM_*`**:
+
+```bash
+make create_ioFiles
+# or: (cd design/aie_src/aiesim_data && python3 plioGen.py)
+```
+
+Use the same **`config.json`** for **`make package`** so the SD card carries matching **`matrix_A_input.txt`**, **`b_golden.txt`**, **`c_golden.txt`** / **`matrix_C_golden.txt`**, and **`compare_outputs.py`**. **`SIMPLE_OUT_C`** in the **built** `gemm_config.h` / bitstream must match what you assume when comparing (changing it requires rebuilding **`dma_hls`**, link, and host).
+
+**Compare on the board:** After the host app has written **`c.txt`**, you can run the same Python checker on the board as in simulation—no need to copy **`c.txt`** back to a PC for a basic pass/fail. From the SD package directory that contains **`compare_outputs.py`** and **`config.json`**, run:
+
+```bash
+python3 compare_outputs.py
+```
+
+The script reads **`SIMPLE_OUT_C`** from **`config.json`** and compares **`c.txt`** to **`c_golden.txt`** or **`matrix_C_golden.txt`** accordingly. Default paths are tuned for a typical embedded layout (e.g. **`c.txt`** under **`/media/output_files/`**, goldens under **`/media`**); use **`python3 compare_outputs.py --help`** and **`--c-txt`** / **`--golden-dir`** if your paths differ.
+
+---
+
+## Architecture notes (AIEML)
+
+This design targets **AI Engine ML (AIEML)** generation (**`__AIE_ARCH__ == 20`** and related), with **ACC32/ACC64** support in that family. The DSPLIB **`matrix_mult_graph`** path used in **`graph.h`** supports **integer** GEMM (`int16`, `int32` here; the library also lists other integer complex types). **`float`** / **`cfloat`** are rejected in the Makefile for this project because the host and graph are wired for int16/int32 only.
+
+**Future tooling:** This project is **developed and tested with AMD Vitis 2024.1** (match Vivado to the same release). Newer **Vitis** / **Vitis Libraries** (DSP) versions may expose **additional `matrix_mult` data types or precisions** beyond the int16/int32 path here; see **release notes** for your installed version. Porting to another type still requires updating **`graph.h`**, **`dma_hls.cpp`**, **`gemm_utils.cpp` / `gemm_aie_app.cpp`**, **`plioGen.py` / `plio_utils.py`**, Makefile `DATA_TYPE` handling, and validation scripts.
+
+Board-specific AI Engine placement may be described in **`aie_primitive.json`** (if present in your platform or flow outputs).
+
+**Optional workflow**: `sync_and_run.sh` (with `Mahdieh_env_setup.sh` for local paths) can align derived fields in `config.json`, drive builds, and run compare steps; adjust paths inside those scripts for your machine before committing forks.
+
+---
+
+## Performance
+
+Fill in numbers for **your** board, clock, and `config.json` — the table below is a placeholder for your README on GitHub.
+
+| Matrix (A × AB × B) | Notes | AIE / system time | Host reference (e.g. PyTorch CPU) |
+|---------------------|-------|-------------------|-----------------------------------|
+| *example*           | *device, INT16/32, core count* | | |
+
+---
+
+## Contributing
+
+1. Fork the repository and create a branch for your change.
+2. Keep commits focused; match existing style in C++/HLS/AIE sources.
+3. Do not commit large build artifacts (`build/`, generated `xclbin`, Vivado runs); use `.gitignore` (see below).
+4. If you change `config.json` geometry or datatype, run **`validate_gemm_config.py`** and **`make create_ioFiles`** (or `plioGen.py`) so checked-in **`gemm_*_ioFiles`** stay consistent, or document that goldens are intentionally not updated.
+5. Open a pull request with a short description of behavior, risk, and how you tested (e.g. `hw_emu` vs `hw`, int16 vs int32).
+
+---
+
+## License
+
+SPDX: **MIT** — see the header in **`Makefile`** and per-file notices (e.g. `SPDX-License-Identifier: MIT`). If you want GitHub’s license badge to resolve, add a top-level **`LICENSE`** file with the same MIT text.
+
+---
+
+## Acknowledgments
+
+- **AMD** (formerly Xilinx) for Versal, Vitis, and AI Engine tooling.
+- **Vitis DSP Library** components used in the AI Engine graph.
+- Open-source Python ecosystem (PyTorch, NumPy) for optional benchmarking.
+
+---
+
+## Support
+
+Use **GitHub Issues** in your published repository for questions and bug reports. For tool and silicon defects, use **AMD support channels** and official documentation for your device and Vitis release.

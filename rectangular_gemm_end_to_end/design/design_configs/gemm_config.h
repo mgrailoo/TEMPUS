@@ -5,19 +5,19 @@
 #define GEMM_SIZE_A 1024
 #define GEMM_SIZE_AB 1024
 #define GEMM_SIZE_B 1024
-#define DATA_TYPE 16
+#define DATA_TYPE 32
 // Tile dimensions (A, AB, B)
 // DIM is not defined here - only DIM_A, DIM_AB, DIM_B are used in code
-#define DIM_A 64
+#define DIM_A 32
 #define DIM_AB 128
-#define DIM_B 64
+#define DIM_B 32
 #define SPLIT_A 2
 #define SPLIT_B 2
 #define CASC_LN_AB 8
 // Legacy names for backward compatibility
 #define SPLIT 2  // For Matrix C split (uses SPLIT_B)
 #define CASC_LN 8
-#define WRD_LN 8
+#define WRD_LN 4
 #define N_SAMPLES 1
 #define ITER_CNT 1
 #define GEMM_INSTS 1
@@ -29,7 +29,9 @@
 #define SIMPLE_OUT_C 0
 // Calculated graph iteration count
 // GRAPH_ITER_CNT = (GEMM_SIZE_A * GEMM_SIZE_B / SPLIT_B) / (DIM_A * DIM_B)
-#define GRAPH_ITER_CNT 128
+#define GRAPH_ITER_CNT 512
+// AIE matrix_mult kernel runtime ratio (graph.h). Tune for Phase 6; typical 0.75–0.95.
+#define AIE_RUNTIME_RATIO 1.0
 // Additional constants needed by host app and other components
 #define NUM_A_FILES 8
 #define NUM_B_FILES 16
@@ -55,6 +57,14 @@
 // Matrix C: Each split has (GEMM_SIZE_A * GEMM_SIZE_B) / SPLIT_B / WRD_LN elements
 // Matrix C is split only in columns by SPLIT_B (all rows, split columns)
 #define BASE_MATC_SZ ((GEMM_SIZE_A * GEMM_SIZE_B) / SPLIT_B / WRD_LN)
+// SIMPLE_OUT_C=0 (dma_hls out_C): buffer sizes — hardcoded 512 caused silent overflow for large tiles/blocks
+// WORDS_PER_C_TILE = (DIM_A*DIM_B)/WRD_LN; WORDS_PER_C_BLOCK = rows_per_block * ceil(cols_per_file/WRD_LN) per split
+#define WORDS_PER_C_TILE ((DIM_A * DIM_B) / WRD_LN)
+#define WORDS_PER_C_BLOCK (((GEMM_SIZE_A) / (SPLIT_A)) * (((GEMM_SIZE_B) / (SPLIT_B) + (WRD_LN) - 1) / (WRD_LN)))
+#if !SIMPLE_OUT_C
+// HLS AXIS C FIFO depth for complex out_C (integer; adaptive 32..1024 GEMM — see Makefile FIFO_C_DEPTH_COMPLEX_VAL)
+#define FIFO_C_DEPTH_COMPLEX 51712
+#endif
 // Output C tile grid (per split block): row-major when more cols than rows, else column-major
 #define TILES_PER_BLOCK_ROW_C ((GEMM_SIZE_A / SPLIT_A) / DIM_A)
 #define TILES_PER_BLOCK_COL_C ((GEMM_SIZE_B / SPLIT_B) / DIM_B)
