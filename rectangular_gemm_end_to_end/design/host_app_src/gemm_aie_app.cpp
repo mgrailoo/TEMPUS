@@ -232,7 +232,7 @@ int main(int argc, char ** argv) {
         if (initializeDeviceAndLoadXclbin(device, xclbin_uuid, argv[1]) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-    phase1_us = logElapsedTime(t_phase1, "PHASE 1 TOTAL: Device + XCLBIN initialization");
+        phase1_us = logElapsedTime(t_phase1, "PHASE 1 TOTAL: Device + XCLBIN initialization");
 
         // ========================================================================
         // PHASE 2: BUFFER CREATION AND MAPPING
@@ -250,7 +250,7 @@ int main(int argc, char ** argv) {
             return EXIT_FAILURE;
         }
 
-    phase2_us = logElapsedTime(t_phase2, "PHASE 2 TOTAL: Buffer creation + mapping");
+        phase2_us = logElapsedTime(t_phase2, "PHASE 2 TOTAL: Buffer creation + mapping");
 
         // ========================================================================
         // PHASE 3: DATA TRANSFER TO DEVICE
@@ -271,11 +271,9 @@ int main(int argc, char ** argv) {
                                      raw_mata_words, EXACT_MATB_SZ, EXACT_MATC_SZ) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-    phase3_us = logElapsedTime(t_phase3, "PHASE 3 TOTAL: Data transfer + sync to device");
+        phase3_us = logElapsedTime(t_phase3, "PHASE 3 TOTAL: host data load + sync to device (detail above)");
 
-        // Debug: Print input buffers after transfer for verification
-    // DEBUG: enable if input buffer inspection is required
-    // printInputBuffers(inA_bomapped, inB_bomapped, ALIGNED_MATA_BYTES, ALIGNED_MATB_BYTES);
+        // Optional: printInputBuffers(inA_bomapped, inB_bomapped, ALIGNED_MATA_BYTES, ALIGNED_MATB_BYTES);
 
         // ========================================================================
         // PHASE 4: KERNEL AND GRAPH CREATION
@@ -284,18 +282,15 @@ int main(int argc, char ** argv) {
         // This phase instantiates the DMA kernel and AI Engine graph
         auto t_phase4 = std::chrono::high_resolution_clock::now();
         printf("\n=== PHASE 4: Kernel and Graph Creation ===\n");
-                    // Graph is already created in main, just verify it's valid
-        xrt::graph gemm_aie_gr(device, xclbin_uuid, "g");      // AI Engine graph handle
-        
+        // Graph handle for this scope (name "g" must match libadf)
+        xrt::graph gemm_aie_gr(device, xclbin_uuid, "g");
         printf("Graph object already created and ready\n");
-        xrt::kernel dma_hls_khdl;                              // DMA kernel handle
-        
-        
+        xrt::kernel dma_hls_khdl;
         if (createKernel(device, xclbin_uuid, dma_hls_khdl) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
 
-    phase4_us = logElapsedTime(t_phase4, "PHASE 4 TOTAL: Kernel + Graph creation");
+        phase4_us = logElapsedTime(t_phase4, "PHASE 4 TOTAL: Kernel + Graph creation");
 
         // ========================================================================
         // PHASE 5 & 6: KERNEL LAUNCH + CORE COMPUTATION
@@ -336,13 +331,10 @@ int main(int argc, char ** argv) {
         // ========================================================================
         // PHASE 8: OUTPUT PROCESSING AND FILE WRITING
         // ========================================================================
-        // Debug output and file writing with timing measurement
         auto t_phase8 = std::chrono::high_resolution_clock::now();
         printf("\n=== PHASE 8: Output Processing and File Writing ===\n");
 
-        // Debug output (automatically printed by writeOutputToFile when buffer is all zeros)
-        // Uncomment next line to always print first 16 words of C after sync:
-        // printOutputBuffer(outC_bomapped, ALIGNED_MATC_BYTES);
+        // writeOutputToFile logs if the C buffer is all zeros. Optional: printOutputBuffer(outC_bomapped, ALIGNED_MATC_BYTES);
 
         // Write c.txt next to cwd (e.g. /path/to/app/output_files/c.txt when run from /path/to/app).
         // Avoid /sd_card/... unless that mount exists; compare_outputs.py / golden use matrix_C_golden.txt.
@@ -350,19 +342,17 @@ int main(int argc, char ** argv) {
             return EXIT_FAILURE;
         }
 
-    phase8_us = logElapsedTime(t_phase8, "PHASE 8 TOTAL: Output processing + file writing");
-        
-       
+        phase8_us = logElapsedTime(t_phase8, "PHASE 8 TOTAL: Output processing + file writing");
+
         // ========================================================================
         // TIMING SUMMARY AND PERFORMANCE ANALYSIS
         // ========================================================================
-        // Print comprehensive timing summary for performance analysis
-        // This helps identify bottlenecks and optimize the application
-        printf("\n=== OVERALL TIMING SUMMARY in Configuration: GEMM_SIZE_A=%d, GEMM_SIZE_AB=%d, GEMM_SIZE_B=%d, DIM_A=%d, DIM_AB=%d, DIM_B=%d, DATA_TYPE=%d (scalar bits), SIMPLE_OUT_C=%d ===\n",
+        printf("\n=== OVERALL TIMING SUMMARY ===\n");
+        printf("Configuration: GEMM %d x %d x %d | DIM_A=%d DIM_AB=%d DIM_B=%d | DATA_TYPE=%d (bits per scalar) | SIMPLE_OUT_C=%d\n",
                GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B, DIM_A, DIM_AB, DIM_B, DATA_TYPE, SIMPLE_OUT_C);
         printDurationUsMs(phase1_us, "Phase 1: Device + XCLBIN initialization");
         printDurationUsMs(phase2_us, "Phase 2: Buffer creation + mapping");
-        printDurationUsMs(phase3_us, "Phase 3: Data transfer + sync to device");
+        printDurationUsMs(phase3_us, "Phase 3: host load + sync (sub-steps printed during Phase 3)");
         printDurationUsMs(phase4_us, "Phase 4: Kernel + Graph creation");
         printDurationUsMs(phase5_us, "Phase 5: Kernel launch");
         printDurationUsMs(phase6_us, "Phase 6: Graph run + DMA wait");
@@ -371,9 +361,8 @@ int main(int argc, char ** argv) {
         printDurationUsMs(phase5_us + phase6_us, "Phases 5+6 combined: Kernel launch + graph run + DMA wait");
         printDurationUsMs(phase3_us + phase5_us + phase6_us + phase7_us, "Phases 3+5+6+7: Data transfer + kernel + graph + output sync");
 
-
-     long long total_program_us = getElapsedMicroseconds(start_time);
-     printDurationUsMs(total_program_us, "TOTAL PROGRAM EXECUTION TIME");
+        long long total_program_us = getElapsedMicroseconds(start_time);
+        printDurationUsMs(total_program_us, "TOTAL PROGRAM EXECUTION TIME");
 
         printf("\nProgram completed successfully!\n");
 

@@ -15,6 +15,8 @@ SPDX-License-Identifier: MIT
 #include <unistd.h>
 #include <errno.h>
 #include <cstring>
+#include <cstdint>
+#include <chrono>
 
 // ============================================================================
 // TIMING AND DURATION FUNCTIONS
@@ -717,12 +719,35 @@ int transferDataToDevice(const std::vector<ap_int<128>, aligned_allocator<ap_int
     printf("Data copied successfully (exact sizes only, padding not used)\n");
     printDurationSince(t_memcpy, "Memcpy host->BO (A, B)");
     
-    // Sync to device
-    auto t_sync_to_dev = std::chrono::high_resolution_clock::now();
+    const size_t bo_a_bytes = inA_bohdl.size();
+    const size_t bo_b_bytes = inB_bohdl.size();
+    printf("Sync A — XCL_BO_SYNC_BO_TO_DEVICE | BO %zu bytes (%zu x 128b), memcpy payload %zu bytes\n",
+           bo_a_bytes, bo_a_bytes / sizeof(ap_int<128>), actual_mata_bytes);
+    auto t_sync_a = HighResClock::now();
     inA_bohdl.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+    {
+        const long long us_a = getElapsedMicroseconds(t_sync_a);
+        printDurationUsMs(us_a, "Sync A wall time (host -> device)");
+        if (us_a > 0) {
+            const double mb_s = (static_cast<double>(bo_a_bytes) / (1024.0 * 1024.0)) /
+                                 (static_cast<double>(us_a) * 1e-6);
+            printf("  Sync A timing detail: %lld us, BO %zu B, ~%.3f MB/s effective\n", us_a, bo_a_bytes, mb_s);
+        }
+    }
+    printf("Sync B — XCL_BO_SYNC_BO_TO_DEVICE | BO %zu bytes (%zu x 128b), memcpy payload %zu bytes\n",
+           bo_b_bytes, bo_b_bytes / sizeof(ap_int<128>), actual_matb_bytes);
+    auto t_sync_b = HighResClock::now();
     inB_bohdl.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-    printf("Buffer synchronization completed\n");
-    printDurationSince(t_sync_to_dev, "Sync to device (A, B)");
+    {
+        const long long us_b = getElapsedMicroseconds(t_sync_b);
+        printDurationUsMs(us_b, "Sync B wall time (host -> device)");
+        if (us_b > 0) {
+            const double mb_s = (static_cast<double>(bo_b_bytes) / (1024.0 * 1024.0)) /
+                                 (static_cast<double>(us_b) * 1e-6);
+            printf("  Sync B timing detail: %lld us, BO %zu B, ~%.3f MB/s effective\n", us_b, bo_b_bytes, mb_s);
+        }
+    }
+    printf("Buffer synchronization completed (A and B)\n");
     
     return EXIT_SUCCESS;
 }
@@ -1139,11 +1164,12 @@ bool load_raw_matrix_into_ddr_buffer(const std::string& filepath,
 // Syncs A and B to device inside this function so the kernel sees the data on hardware.
 // A buffer: inA_bomapped has raw_mata_words entries of 128-bit words (ap_int<128>); each word holds WRD_LN elements.
 // B buffer: inB_bomapped has exact_matb_sz entries of 128-bit words (cascade format, line-per-word from b_golden.txt).
+// Prints Phase 3 sub-timings: A/B host data load separately; sync A and sync B separately.
 int loadMatrixDataDirectToDDR(ap_int<128>* inA_bomapped, ap_int<128>* inB_bomapped,
                               ap_int<128>* outC_bomapped,
                               xrt::bo& inA_bohdl, xrt::bo& inB_bohdl,
                               size_t raw_mata_words, size_t exact_matb_sz, size_t exact_matc_sz) {
-    printf("\n=== Loading Matrix Data Directly to DDR ===\n");
+    printf("\n=== Loading Matrix Data Directly to DDR (Phase 3: host data + device sync) ===\n");
     
     try {
         // Matrix A: raw format (GEMM_SIZE_A × GEMM_SIZE_AB, row-major) - DMA kernel handles transformation
@@ -1173,59 +1199,97 @@ int loadMatrixDataDirectToDDR(ap_int<128>* inA_bomapped, ap_int<128>* inB_bomapp
             printf("WARNING: Matrix input files not found (A:%s B:%s). Using default patterns.\n",
                    a_path.empty() ? "missing" : a_path.c_str(),
                    b_path.empty() ? "missing" : b_path.c_str());
-            // Fill with default patterns directly in DDR
             ap_int<128> default_a("0x00010001000100010001000100010001", 16);
             ap_int<128> default_b("0x00020002000200020002000200020002", 16);
+            auto t_load_a = HighResClock::now();
             std::fill(inA_bomapped, inA_bomapped + raw_mata_words, default_a);
+            printDurationSince(t_load_a, "Phase 3: Matrix A data (host fill into mapped BO)");
+            auto t_load_b = HighResClock::now();
             std::fill(inB_bomapped, inB_bomapped + exact_matb_sz, default_b);
+            printDurationSince(t_load_b, "Phase 3: Matrix B data (host fill into mapped BO)");
         } else {
-            // Load Matrix A from raw matrix format (row-major, simple format)
-            printf("Loading Matrix A (raw format) from %s directly into DDR...\n", a_path.c_str());
+            printf("Loading Matrix A (raw format) from %s into mapped BO...\n", a_path.c_str());
+            auto t_load_a = HighResClock::now();
             if (!load_raw_matrix_into_ddr_buffer(a_path, inA_bomapped, raw_mata_words)) {
                 printf("Failed reading %s, falling back to default A pattern.\n", a_path.c_str());
                 ap_int<128> default_a("0x00010001000100010001000100010001", 16);
                 std::fill(inA_bomapped, inA_bomapped + raw_mata_words, default_a);
             }
-            // Load Matrix B from cascade format
-            printf("Loading Matrix B (cascade format) from %s directly into DDR...\n", b_path.c_str());
+            printDurationSince(t_load_a, "Phase 3: Matrix A data (file read into mapped BO)");
+
+            printf("Loading Matrix B (cascade format) from %s into mapped BO...\n", b_path.c_str());
+            auto t_load_b = HighResClock::now();
             if (!load_golden_into_ddr_buffer(b_path, inB_bomapped, exact_matb_sz)) {
                 printf("Failed reading %s, falling back to default B pattern.\n", b_path.c_str());
                 ap_int<128> default_b("0x00020002000200020002000200020002", 16);
                 std::fill(inB_bomapped, inB_bomapped + exact_matb_sz, default_b);
             }
-            // Log first loaded values so you can verify they match the golden files (not default pattern)
+            printDurationSince(t_load_b, "Phase 3: Matrix B data (file read into mapped BO)");
+
             if (raw_mata_words > 0) {
                 ap_int<128> w = inA_bomapped[0];
                 printf("  A first word (first %d elems): ", WRD_LN);
 #if DATA_TYPE == 16
-                for (int j = 0; j < WRD_LN; ++j) printf("%d ", (int)((w >> (j * 16)) & 0xFFFF));
+                for (int j = 0; j < WRD_LN; ++j)
+                    printf("%d ", (int)static_cast<int16_t>(static_cast<uint16_t>((w >> (j * 16)) & 0xFFFF)));
 #else
                 for (int j = 0; j < WRD_LN; ++j) printf("%d ", (int)w.range((j + 1) * 32 - 1, j * 32));
 #endif
-                printf("(expect first line of matrix_A_input.txt)\n");
+                printf("(expect first line of matrix_A_input.txt; int16 printed signed)\n");
             }
             if (exact_matb_sz > 0) {
                 ap_int<128> w = inB_bomapped[0];
                 printf("  B first word (first %d elems): ", WRD_LN);
 #if DATA_TYPE == 16
-                for (int j = 0; j < WRD_LN; ++j) printf("%d ", (int)((w >> (j * 16)) & 0xFFFF));
+                for (int j = 0; j < WRD_LN; ++j)
+                    printf("%d ", (int)static_cast<int16_t>(static_cast<uint16_t>((w >> (j * 16)) & 0xFFFF)));
 #else
                 for (int j = 0; j < WRD_LN; ++j) printf("%d ", (int)w.range((j + 1) * 32 - 1, j * 32));
 #endif
-                printf("(expect first line of b_golden.txt)\n");
+                printf("(expect first line of b_golden.txt; int16 printed signed)\n");
             }
         }
 
-        // Initialize output buffer to zero
         std::fill(outC_bomapped, outC_bomapped + exact_matc_sz, 0);
         printf("Output buffer initialized to zero\n");
 
-        // Sync input buffers to device so the DMA kernel sees A and B on hardware.
-        // Without this, the kernel reads device memory that was never updated → AIE gets no valid data → C stays zero.
-        printf("Syncing input buffers A and B to device...\n");
+        const size_t bo_a_bytes = inA_bohdl.size();
+        const size_t bo_b_bytes = inB_bohdl.size();
+        printf("Phase 3: Device sync — GEMM %d x %d x %d | tiling DIM_A=%d DIM_AB=%d DIM_B=%d | "
+               "SPLIT_A=%d SPLIT_B=%d CASC_LN_AB=%d | WRD_LN=%d\n",
+               GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B, DIM_A, DIM_AB, DIM_B,
+               SPLIT_A, SPLIT_B, CASC_LN_AB, WRD_LN);
+
+        // DMA kernel reads device DDR; push host-mapped BO contents to device separately per buffer.
+        printf("Phase 3: Sync A — XCL_BO_SYNC_BO_TO_DEVICE | BO %zu bytes (%zu x 128b words), payload %zu words filled\n",
+               bo_a_bytes, bo_a_bytes / sizeof(ap_int<128>), raw_mata_words);
+        auto t_sync_a = HighResClock::now();
         inA_bohdl.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        {
+            const long long us_a = getElapsedMicroseconds(t_sync_a);
+            printDurationUsMs(us_a, "Phase 3: Sync A wall time");
+            if (us_a > 0) {
+                const double mb_s =
+                    (static_cast<double>(bo_a_bytes) / (1024.0 * 1024.0)) / (static_cast<double>(us_a) * 1e-6);
+                printf("  Sync A timing detail: %lld us, BO %zu B, ~%.3f MB/s effective (host -> device)\n", us_a,
+                       bo_a_bytes, mb_s);
+            }
+        }
+
+        printf("Phase 3: Sync B — XCL_BO_SYNC_BO_TO_DEVICE | BO %zu bytes (%zu x 128b words), payload %zu words filled\n",
+               bo_b_bytes, bo_b_bytes / sizeof(ap_int<128>), exact_matb_sz);
+        auto t_sync_b = HighResClock::now();
         inB_bohdl.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-        printf("Input buffers synced to device\n");
+        {
+            const long long us_b = getElapsedMicroseconds(t_sync_b);
+            printDurationUsMs(us_b, "Phase 3: Sync B wall time");
+            if (us_b > 0) {
+                const double mb_s =
+                    (static_cast<double>(bo_b_bytes) / (1024.0 * 1024.0)) / (static_cast<double>(us_b) * 1e-6);
+                printf("  Sync B timing detail: %lld us, BO %zu B, ~%.3f MB/s effective (host -> device)\n", us_b,
+                       bo_b_bytes, mb_s);
+            }
+        }
 
         printf("Matrices loaded directly into DDR successfully\n");
         

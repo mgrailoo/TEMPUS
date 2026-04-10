@@ -23,8 +23,15 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ENV_SCRIPT="$ROOT_DIR/Mahdieh_env_setup.sh"
-# Source environment setup for local tools/root (temporarily relax nounset and errexit)
+# Toolchain: Mahdieh_env_setup.sh (project default), or env_setup.sh, or ENV_SCRIPT_OVERRIDE.
+if [[ -n "${ENV_SCRIPT_OVERRIDE:-}" ]]; then
+    ENV_SCRIPT="$ENV_SCRIPT_OVERRIDE"
+elif [[ -f "$ROOT_DIR/Mahdieh_env_setup.sh" ]]; then
+    ENV_SCRIPT="$ROOT_DIR/Mahdieh_env_setup.sh"
+else
+    ENV_SCRIPT="$ROOT_DIR/env_setup.sh"
+fi
+# Source environment setup for local tools (temporarily relax nounset and errexit)
 if [[ -f "$ENV_SCRIPT" ]]; then
     _nounset_was_on=0
     _errexit_was_on=0
@@ -44,8 +51,11 @@ if [[ -f "$ENV_SCRIPT" ]]; then
     if [[ $_errexit_was_on -eq 1 ]]; then
         set -e
     fi
+elif command -v vitis >/dev/null 2>&1; then
+    echo "[INFO] No Mahdieh_env_setup.sh / env_setup.sh; using Vitis from PATH (set ENV_SCRIPT_OVERRIDE to force a script)."
 else
-    echo "[ERROR] Mahdieh_env_setup.sh not found in $ROOT_DIR"
+    echo "[ERROR] Vitis not on PATH and no Mahdieh_env_setup.sh or env_setup.sh found."
+    echo "  Add Mahdieh_env_setup.sh to $ROOT_DIR, or: cp env_setup.example.sh env_setup.sh && edit, or source Vitis settings64.sh."
     exit 1
 fi
 CONFIG_PATH="$ROOT_DIR/design/design_configs/config.json"

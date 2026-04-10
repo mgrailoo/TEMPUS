@@ -102,10 +102,11 @@ void printExactMatrixSizeCalculation();
 
 // Load matrix data directly into DDR buffers (DDR-only mode).
 // Syncs A and B to device inside this function so the kernel sees the data on hardware.
+// Logs Phase 3 sub-timings: A/B host data load, then sync A, sync B (see implementation).
 int loadMatrixDataDirectToDDR(ap_int<128>* inA_bomapped, ap_int<128>* inB_bomapped,
                               ap_int<128>* outC_bomapped,
                               xrt::bo& inA_bohdl, xrt::bo& inB_bohdl,
-                              size_t exact_mata_sz, size_t exact_matb_sz, size_t exact_matc_sz);
+                              size_t raw_mata_words, size_t exact_matb_sz, size_t exact_matc_sz);
 
 // Debug printing functions
 void printInputBuffers(const ap_int<128>* inA_bomapped, const ap_int<128>* inB_bomapped, 

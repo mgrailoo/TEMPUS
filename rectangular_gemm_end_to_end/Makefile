@@ -65,6 +65,13 @@ print-%  : ; @echo $* = $($*)
 # ============================================================================
 # ENVIRONMENT CONFIGURATION
 # ============================================================================
+# DSPLIB_VITIS, PLATFORM, XILINX_* must be set for v++/aiecompiler. Default workflow:
+#   source ./Mahdieh_env_setup.sh && make <target>
+# Optional: copy env_setup.example.sh -> env_setup.sh (sources Mahdieh) and: source env_setup.sh && make ...
+# Override: export DSPLIB_VITIS=... manually or set ENV_SCRIPT_OVERRIDE when using sync_and_run.sh
+ifndef DSPLIB_VITIS
+  $(warning DSPLIB_VITIS is not set — run: source ./Mahdieh_env_setup.sh before make)
+endif
 DSPLIB_ROOT = $(DSPLIB_VITIS)/dsp
 
 # ============================================================================
@@ -110,6 +117,8 @@ SPLIT := $(SPLIT_B)  # For Matrix C split (uses SPLIT_B)
 CASC_LN := $(CASC_LN_AB)
 GEMM_INSTS := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('GEMM_INSTS',1))")
 PL_FREQ := $(shell python3 -c "import json;v=json.load(open('$(CONFIG_JSON)')).get('PL_FREQ','312.5'); print(str(v).replace('.','_') if isinstance(v,(int,float)) else v)")
+# inp_A partial cascade UNROLL (dma_hls.cpp): 2 or 4; must divide CASC_LN_AB (default 4)
+PACK_CASCADE_UNROLL_FACTOR := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));v=c.get('PACK_CASCADE_UNROLL_FACTOR',4);x=int(v) if isinstance(v,(int,float)) else int(str(v).strip());print(x if x in (2,4) else 4)")
 # AIE kernel runtime ratio in (0,1]; from config.json (default 0.75)
 AIE_RUNTIME_RATIO := $(shell python3 -c "import json;c=json.load(open('$(CONFIG_JSON)'));v=c.get('AIE_RUNTIME_RATIO',0.75);x=float(v) if isinstance(v,(int,float)) else float(str(v).strip());x=max(0.05,min(1.0,x));print(x)")
 ITER_CNT := $(shell python3 -c "import json;print(json.load(open('$(CONFIG_JSON)')).get('ITER_CNT',1))")
@@ -449,6 +458,7 @@ VPP_FLAGS := --platform $(PLATFORM) --save-temps --temp_dir $(VPP_TEMP_DIR) --ve
 DATAMOVER_KERNEL_VPP_FLAGS := --hls.clock $(VPP_CLOCK_FREQ):$(DATAMOVER_KERNEL_TOP)
 DATAMOVER_KERNEL_VPP_FLAGS += -D GEMM_SIZE_A=$(GEMM_SIZE_A) -D GEMM_SIZE_AB=$(GEMM_SIZE_AB) -D GEMM_SIZE_B=$(GEMM_SIZE_B) -D SPLIT=$(SPLIT) -D CASC_LN=$(CASC_LN)
 DATAMOVER_KERNEL_VPP_FLAGS += -D DIM_A=$(DIM_A) -D DIM_AB=$(DIM_AB) -D DIM_B=$(DIM_B) -D DATA_TYPE=$(DATA_TYPE)
+DATAMOVER_KERNEL_VPP_FLAGS += -D PACK_CASCADE_UNROLL_FACTOR=$(PACK_CASCADE_UNROLL_FACTOR)
 DATAMOVER_KERNEL_VPP_FLAGS += --hls.jobs 32
 
 # V++ link flags
@@ -484,6 +494,7 @@ PKG_FLAGS += --package.sd_file $(EXEC_SCRIPTS_REPO)/$(EMBEDDED_EXEC_SCRIPT)
 PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/b_golden.txt
 PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/matrix_A_input.txt
 PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/matrix_C_golden.txt
+PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_DIR)/c_golden.txt
 PKG_FLAGS += --package.sd_file $(AIE_SIM_IO_BASE_DIR)/compare_outputs.py
 PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/design_configs/config.json
 PKG_FLAGS += --package.sd_file $(DESIGN_REPO)/setup_ml_environment.sh
@@ -988,5 +999,3 @@ cleanall: cleanall_blds cleanall_reports
 open_vivado_proj: $(BUILD_TARGET_DIR)/_x/link/vivado/vpl/prj/prj.xpr
 	cd "$(BUILD_TARGET_DIR)"; \
 	vivado "_x/link/vivado/vpl/prj/prj.xpr"
-
-

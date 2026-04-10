@@ -11,6 +11,9 @@ vivado_*.backup.log
 logs/
 reports/
 
+# Large AIE sim I/O (regenerate with plioGen / workflow)
+design/aie_src/aiesim_data/gemm_1024x1024x1024_ioFiles/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -26,3 +29,6 @@ __pycache__/
 .cursor/
 .cursorignore
 .vscode/
+
+# Local toolchain (copy from env_setup.example.sh)
+env_setup.sh
