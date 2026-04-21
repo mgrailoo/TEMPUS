@@ -2,15 +2,15 @@
 #define GEMM_CONFIG_H
 #define TARGET_HW 1
 // Matrix dimensions (A, AB, B)
-#define GEMM_SIZE_A 1024
-#define GEMM_SIZE_AB 64
-#define GEMM_SIZE_B 8
+#define GEMM_SIZE_A 512
+#define GEMM_SIZE_AB 512
+#define GEMM_SIZE_B 512
 #define DATA_TYPE 16
 // Tile dimensions (A, AB, B)
 // DIM is not defined here - only DIM_A, DIM_AB, DIM_B are used in code
-#define DIM_A 512
-#define DIM_AB 8
-#define DIM_B 4
+#define DIM_A 128
+#define DIM_AB 64
+#define DIM_B 128
 #define SPLIT_A 2
 #define SPLIT_B 2
 #define CASC_LN_AB 8
@@ -27,7 +27,7 @@
 #define USE_DDR_ONLY_MODE 1
 // Calculated graph iteration count
 // GRAPH_ITER_CNT = (GEMM_SIZE_A * GEMM_SIZE_B / SPLIT_B) / (DIM_A * DIM_B)
-#define GRAPH_ITER_CNT 2
+#define GRAPH_ITER_CNT 8
 // Additional constants needed by host app and other components
 #define NUM_A_FILES 8
 #define NUM_B_FILES 16

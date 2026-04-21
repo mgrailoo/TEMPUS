@@ -154,7 +154,7 @@ void inp_A(
     read_A_sequential: for (int i = 0; i < EXACT_MATA_SZ; i++) {
         #pragma HLS PIPELINE II=1
         #pragma HLS LOOP_TRIPCOUNT min=EXACT_MATA_SZ max=EXACT_MATA_SZ
-        #pragma HLS UNROLL factor=4
+        #pragma HLS UNROLL factor=8
         
         // Safe memory access with bounds checking
         ap_int<128> data = matA[i];
@@ -238,7 +238,7 @@ void inp_B(
     read_B_sequential: for (int i = 0; i < EXACT_MATB_SZ; i++) {
         #pragma HLS PIPELINE II=1
         #pragma HLS LOOP_TRIPCOUNT min=EXACT_MATB_SZ max=EXACT_MATB_SZ
-        #pragma HLS UNROLL factor=4
+        #pragma HLS UNROLL factor=8
         
         // Safe memory access with bounds checking
         ap_int<128> data = matB[i];

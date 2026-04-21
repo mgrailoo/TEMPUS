@@ -1,0 +1,14 @@
+# Build outputs / logs
+**/build/
+**/logs/
+**/reports/
+**/*.jou
+**/*.log
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+
+# Generated IO files for aiesim / plio
+**/design/aie_src/aiesim_data/*_ioFiles/
+

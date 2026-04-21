@@ -354,74 +354,27 @@ int main(int argc, char ** argv) {
         // ========================================================================
         // PHASE 5 & 6: BENCHMARKING KERNEL LAUNCH + CORE COMPUTATION
         // ========================================================================
-        // Measure average time for Phase 5 (Kernel Launch) and Phase 6 (Core Computation)
-        // This matches PyTorch benchmarking methodology for fair comparison
-        printf("\n=== PHASE 5 & 6: Benchmarking Kernel Launch + Core Computation ===\n");
-        
-        // Number of warmup and benchmark iterations (similar to PyTorch)
-        const int WARMUP_ITERATIONS = 3;
-        const int BENCHMARK_ITERATIONS = (N_SAMPLES > 1) ? N_SAMPLES : 10;  // Use N_SAMPLES if > 1, else default to 10
-        
-        std::vector<long long> phase5_times;  // Store Phase 5 times
-        std::vector<long long> phase6_times;  // Store Phase 6 times
-        std::vector<long long> phase5_6_combined_times;  // Store combined Phase 5+6 times
-        
-        xrt::run dma_hls_rhdl;  // Kernel run handle (reused across iterations)
-        
-        // ========================================================================
-        // WARMUP RUNS (no timing measurement)
-        // ========================================================================
-        printf("Warming up (%d iterations)...\n", WARMUP_ITERATIONS);
-        for (int warmup = 0; warmup < WARMUP_ITERATIONS; warmup++) {
-            xrt::run warmup_rhdl;  // Create new run handle for each warmup
-            if (launchKernel(dma_hls_khdl, inA_bohdl, inB_bohdl, outC_bohdl, warmup_rhdl) != EXIT_SUCCESS) {
-                return EXIT_FAILURE;
-            }
-            if (executeComputation(gemm_aie_gr, warmup_rhdl, outC_bomapped, outC_bohdl) != EXIT_SUCCESS) {
-                return EXIT_FAILURE;
-            }
-            // Wait for graph to complete before next iteration
-            gemm_aie_gr.wait();
-            // Sync output buffer (required for next iteration)
-            outC_bohdl.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+        // Run exactly once: no warmup and no repeated benchmark iterations
+        printf("\n=== PHASE 5 & 6: Kernel Launch + Core Computation (single run) ===\n");
+
+        // Phase 5: Kernel Launch
+        xrt::run run_handle;
+        auto t_phase5 = std::chrono::high_resolution_clock::now();
+        if (launchKernel(dma_hls_khdl, inA_bohdl, inB_bohdl, outC_bohdl, run_handle) != EXIT_SUCCESS) {
+            return EXIT_FAILURE;
         }
-        printf("Warmup complete.\n");
-        
-        // ========================================================================
-        // BENCHMARK RUNS (with timing measurement)
-        // ========================================================================
-        printf("Benchmarking Phase 5 + Phase 6 (%d iterations)...\n", BENCHMARK_ITERATIONS);
-        for (int iter = 0; iter < BENCHMARK_ITERATIONS; iter++) {
-            // Phase 5: Kernel Launch
-            auto t_phase5 = std::chrono::high_resolution_clock::now();
-            xrt::run iter_rhdl;  // Create new run handle for each benchmark iteration
-            if (launchKernel(dma_hls_khdl, inA_bohdl, inB_bohdl, outC_bohdl, iter_rhdl) != EXIT_SUCCESS) {
-                return EXIT_FAILURE;
-            }
-            long long phase5_iter_us = getElapsedMicroseconds(t_phase5);
-            phase5_times.push_back(phase5_iter_us);
-            
-            // Phase 6: Core Computation (Graph run + DMA wait)
-            auto t_phase6 = std::chrono::high_resolution_clock::now();
-            if (executeComputation(gemm_aie_gr, iter_rhdl, outC_bomapped, outC_bohdl) != EXIT_SUCCESS) {
-                return EXIT_FAILURE;
-            }
-            // Wait for graph to complete before next iteration
-            gemm_aie_gr.wait();
-            long long phase6_iter_us = getElapsedMicroseconds(t_phase6);
-            phase6_times.push_back(phase6_iter_us);
-            
-            // Combined Phase 5 + Phase 6 time
-            long long phase5_6_combined_us = phase5_iter_us + phase6_iter_us;
-            phase5_6_combined_times.push_back(phase5_6_combined_us);
-            
-            // Sync output buffer (required for next iteration)
-            outC_bohdl.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-            
-            if ((iter + 1) % 5 == 0 || iter == BENCHMARK_ITERATIONS - 1) {
-                printf("  Completed %d/%d iterations\n", iter + 1, BENCHMARK_ITERATIONS);
-            }
+        phase5_us = getElapsedMicroseconds(t_phase5);
+
+        // Phase 6: Core Computation (Graph run + DMA wait)
+        auto t_phase6 = std::chrono::high_resolution_clock::now();
+        if (executeComputation(gemm_aie_gr, run_handle, outC_bomapped, outC_bohdl) != EXIT_SUCCESS) {
+            return EXIT_FAILURE;
         }
+        phase6_us = getElapsedMicroseconds(t_phase6);
+        gemm_aie_gr.wait();
+
+        // Sync output buffer after compute
+        outC_bohdl.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
         
         // ========================================================================
         // END GRAPH EXECUTION (CRITICAL: Prevents state persistence between runs)
@@ -434,64 +387,14 @@ int main(int argc, char ** argv) {
         printf("Graph execution ended successfully\n");
         
         // ========================================================================
-        // CALCULATE STATISTICS (similar to PyTorch)
+        // PRINT SINGLE-RUN RESULTS
         // ========================================================================
-        // Calculate statistics for Phase 5 + Phase 6 combined (most relevant for comparison)
-        long long sum_combined = 0;
-        long long min_combined = phase5_6_combined_times[0];
-        long long max_combined = phase5_6_combined_times[0];
-        
-        for (size_t i = 0; i < phase5_6_combined_times.size(); i++) {
-            sum_combined += phase5_6_combined_times[i];
-            if (phase5_6_combined_times[i] < min_combined) min_combined = phase5_6_combined_times[i];
-            if (phase5_6_combined_times[i] > max_combined) max_combined = phase5_6_combined_times[i];
-        }
-        
-        double mean_combined_us = static_cast<double>(sum_combined) / BENCHMARK_ITERATIONS;
-        
-        // Calculate standard deviation
-        double variance_combined = 0.0;
-        for (size_t i = 0; i < phase5_6_combined_times.size(); i++) {
-            double diff = phase5_6_combined_times[i] - mean_combined_us;
-            variance_combined += diff * diff;
-        }
-        double std_combined_us = sqrt(variance_combined / BENCHMARK_ITERATIONS);
-        
-        // Calculate statistics for Phase 5 only
-        long long sum_phase5 = 0;
-        for (size_t i = 0; i < phase5_times.size(); i++) {
-            sum_phase5 += phase5_times[i];
-        }
-        double mean_phase5_us = static_cast<double>(sum_phase5) / BENCHMARK_ITERATIONS;
-        
-        // Calculate statistics for Phase 6 only
-        long long sum_phase6 = 0;
-        for (size_t i = 0; i < phase6_times.size(); i++) {
-            sum_phase6 += phase6_times[i];
-        }
-        double mean_phase6_us = static_cast<double>(sum_phase6) / BENCHMARK_ITERATIONS;
-        
-        // ========================================================================
-        // PRINT BENCHMARK RESULTS (PyTorch-style format)
-        // ========================================================================
-        printf("\n=== BENCHMARK RESULTS (Phase 5 + Phase 6) ===\n");
+        printf("\n=== SINGLE-RUN RESULTS (Phase 5 + Phase 6) ===\n");
         printf("Matrix Size: %dx%dx%d (A×AB×B)\n", GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B);
-        printf("Iterations: %d (after %d warmup runs)\n", BENCHMARK_ITERATIONS, WARMUP_ITERATIONS);
         printf("\nPhase 5 + Phase 6 Combined (Kernel Launch + Core Computation):\n");
-        printf("  Mean:   %12.0f us (%8.3f ms) ± %8.0f us (%6.3f ms)\n", 
-               mean_combined_us, mean_combined_us / 1000.0, 
-               std_combined_us, std_combined_us / 1000.0);
-        printf("  Min:    %12lld us (%8.3f ms)\n", min_combined, min_combined / 1000.0);
-        printf("  Max:    %12lld us (%8.3f ms)\n", max_combined, max_combined / 1000.0);
-        printf("\nPhase 5 Only (Kernel Launch):\n");
-        printf("  Mean:   %12.0f us (%8.3f ms)\n", mean_phase5_us, mean_phase5_us / 1000.0);
-        printf("\nPhase 6 Only (Core Computation):\n");
-        printf("  Mean:   %12.0f us (%8.3f ms)\n", mean_phase6_us, mean_phase6_us / 1000.0);
-        printf("\n");
-        
-        // Store average values for summary (use combined Phase 5+6 for main comparison)
-        phase5_us = static_cast<long long>(mean_phase5_us);
-        phase6_us = static_cast<long long>(mean_phase6_us);
+        printDurationUsMs(phase5_us + phase6_us, "  Total");
+        printDurationUsMs(phase5_us, "  Phase 5 (Kernel Launch)");
+        printDurationUsMs(phase6_us, "  Phase 6 (Core Computation)");
         
         // Sync output buffer from device (final sync after all iterations)
         auto buffer_sync_start = std::chrono::high_resolution_clock::now();
