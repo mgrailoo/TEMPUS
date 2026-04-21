@@ -427,7 +427,17 @@ int main(int argc, char ** argv) {
         // ========================================================================
         // Print comprehensive timing summary for performance analysis
         // This helps identify bottlenecks and optimize the application
-        printf("\n=== OVERALL TIMING SUMMARY in Configuration: GEMM_SIZE_A=%d, GEMM_SIZE_AB=%d, GEMM_SIZE_B=%d, DIM_A=%d, DIM_AB=%d, DIM_B=%d ===\n", GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B, DIM_A, DIM_AB, DIM_B);
+        const char* data_type_str =
+            (DATA_TYPE == 16) ? "int16" :
+            (DATA_TYPE == 32) ? "int32" :
+            (DATA_TYPE == 33) ? "float" :
+            "unknown";
+
+        printf(
+            "\n=== OVERALL TIMING SUMMARY in Configuration: GEMM_SIZE_A=%d, GEMM_SIZE_AB=%d, GEMM_SIZE_B=%d, "
+            "DIM_A=%d, DIM_AB=%d, DIM_B=%d, DATA_TYPE=%s (%d) ===\n",
+            GEMM_SIZE_A, GEMM_SIZE_AB, GEMM_SIZE_B, DIM_A, DIM_AB, DIM_B, data_type_str, DATA_TYPE
+        );
         printDurationUsMs(phase1_us, "Phase 1: Device + XCLBIN initialization");
         printDurationUsMs(phase2_us, "Phase 2: Buffer creation + mapping");
         printDurationUsMs(phase3_us, "Phase 3: Data transfer + sync to device");
