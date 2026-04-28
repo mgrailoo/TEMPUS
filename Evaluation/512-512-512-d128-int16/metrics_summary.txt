@@ -1,0 +1,642 @@
+===============================================================================
+AI Engine GEMM Essential Metrics
+===============================================================================
+Generated: 2026-04-21 13:15:39
+Project: GEMM xx (int16, DIM=128, 16 cores)
+===============================================================================
+
+=== RESOURCE UTILIZATION ===
+LUTs: 9282 / 150272 (6.18%)
+BRAMs: 97 / 155 (62.58%)
+DSPs: 0 / 0 (0.00%)
+URAM: 0 / 155 (0.00%)
+CLB Registers: 22994 / 300544 (7.65%)
+
+=== TIMING PERFORMANCE ===
+WNS (Worst Negative Slack): 0.002 ns
+TNS (Total Negative Slack): 0.000 ns
+WHS (Worst Hold Slack): 0.010 ns
+THS (Total Hold Slack): 0.000 ns
+
+Clock Frequencies:
+  clk_pl_0: 100.000 MHz (Base PL Clock)
+  clkfbout_primitive: 100.000 MHz (MMCM Feedback)
+  clkout1_primitive: 156.250 MHz (PL Logic Clock)
+  clkout1_primitive_1: 312.500 MHz (AI Engine Clock)
+  bank1_clkout0: 800.000 MHz (DDR4 Memory Clock)
+  bank1_xpll0_fifo_rd_clk: 800.000 MHz (DDR4 FIFO Clock)
+  mc_clk_xpll: 800.000 MHz (Memory Controller Clock)
+  pll_clk_xpll: 3200.000 MHz (High-Speed I/O Clock)
+Clock Domain Explanation:
+  • Base PL Clock (100 MHz): Main programmable logic clock
+  • AI Engine Clock (312.5 MHz): High-speed AI Engine processing
+  • DDR4 Memory Clock (800 MHz): High-speed memory interface
+  • DDR4 PHY Clocks (3.2 GHz): Physical layer memory interface
+  • System Clock (200 MHz): System-level operations
+  • High-Speed I/O Clock (3.2 GHz): Ultra-fast data transfer
+Status: ✅ TIMING CLOSED
+
+=== POWER CONSUMPTION ===
+Total On-Chip Power: 10.661 W
+AI Engine Power: 2.381 W
+Memory Power (BRAM + NoC-DDRMC + XRAM): 3.163 W
+AI Engine Cores: N/A / 34 (N/A%)
+
+=== RUNTIME PROFILING (if available) ===
+XRT Run Summary: Not found
+Kernel Durations (top):  (none)\n 
+=== KEY INSIGHTS ===
+✅ Design meets timing requirements (WNS = 0.002 ns)
+📈 Low LUT utilization (6.18%) - room for additional functionality
+⚠️ Moderate BRAM usage (62.58%) - monitor memory requirements
+💾 No URAM usage - using BRAM for memory
+📊 Low register usage (7.65%) - efficient design
+🕐 Main clock frequency: 100.000 MHz
+⚡ Total power consumption: 10.661 W
+===============================================================================
+End of Essential Metrics
+===============================================================================
+===============================================================================
+Requested Metrics Summary (auto-extracted)
+===============================================================================
+- # MatMul kernels: N/A
+- # AIE cores: N/A
+- # Memory Banks (AIE tiles used): N/A
+- # DMA banks (DDRMC used/avail): 1 / 1
+- # PLIOs: N/A
+- Throughput (TOPS): N/A
+- Energy efficiency (TOPS/W): N/A
+- Power (W): 10.661
+- AIE core Power (W): 2.381
+- Memory Power (W) [BRAM + NoC-DDRMC + XRAM]: 3.163 W
+- PL BRAM utilization (tiles): 97 / 155 (62.58%)
+- AIE local memory capacity: N/A
+- AIE local memory used (from complexity.csv): N/A
+- AIE local memory utilization: N/A
+- AIE buffer placement: Auto (compiler default)
+- AIE kernel placement: Horizontal
+- AIE KERNEL COMPUTE CYCLES (KCC): N/A
+- KERNEL COMPUTE EFFICIENCY (KCE): N/A
+- MACs/Cyc: N/A
+- AIE kernel utilization (avg %): N/A
+- Shared Memory performance (TOPS): N/A
+- Cascade Stream Performance (TOPS): N/A
+===============================================================================
+===============================================================================
+Comprehensive Versal Metrics (from generated reports)
+===============================================================================
+AI Engine Tiles: AIE Tiles: total=72, core_tiles=1, shim_tiles=16
+AIE Kernel-like Instances: 0
+AIE Stream-like Instances: 0
+PS/CIPS Instances: 325
+APU Core-like Instances: 0
+RPU Core-like Instances: 5
+DDR/MIG Controllers: 2200
+PS Peripheral-like Instances: 0
+PL LUTs: 9282 / 150272 (6.18%)
+PL FFs: 22994 / 300544 (7.65%)
+PL BRAM: 97 / 155 (62.58%)
+Memory Power (W) [BRAM + NoC-DDRMC + XRAM]: 3.163 W
+Memory Distribution: BRAM36=84, BRAM18=26, URAM=0
+Top Interfaces by Theoretical Bandwidth (Gbps):
+  ext_platform_part_i/axi_intc_0 : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[1] : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[2] : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[3] : 0.000 Gbps (0b @ 0.000 MHz)
+  ext_platform_part_i/VitisRegion/dma_hls_0/inst/gmem1_m_axi_U/load_unit_0/buff_rdata/mOutPtr_reg[4] : 0.000 Gbps (0b @ 0.000 MHz)
+AXI Instances: 15253
+AXIS Instances: 3575
+PLIO Instances: 0
+GT Transceiver-like Instances: 0
+NoC Instances: 245
+Clock domains listed: 8
+Constraint Exceptions present (see constraints_exceptions.txt)
+Total On-Chip Power: 10.661 W
+DRC Report: 2 potential violation lines (see drc_checks.txt)
+===============================================================================
+
+===============================================================================
+DETAILED REPORT CONTENTS
+===============================================================================
+
+Extracting from: /home/mahdieh/data/AIE_Versal/LLM2/Versal_AI_ML_Engines_GEMM-main/Versal_AI_ML_Engines_GEMM/rectangular_GEMM/reports/gemm_512x512x512/x1
+
+==================================================================================
+-- DMA Kernel Resource Breakdown (HLS Synthesis with Matrix A Rearrangement) --
+==================================================================================
+
+This section shows the DMA kernel resource utilization AFTER adding the
+Matrix A rearrangement logic (raw matrix -> cascade format transformation).
+
+From: system_estimate_dma_hls.hw.xtxt
+
+Area Information (by Module):
+-----------------------------
+Area Information
+Compute Unit  Kernel Name  Module Name  FF    LUT   DSP  BRAM  URAM
+------------  -----------  -----------  ----  ----  ---  ----  ----
+
+Key Components:
+  - inp_A_producer: Transforms raw Matrix A to cascade format (5,782 LUT)
+  - inp_A_consumer: Broadcasts cascade blocks to AI Engine streams (720 LUT + 16 BRAM)
+  - inp_B: Simple sequential read (247 LUT)
+  - out_C: Simple sequential write (488 LUT)
+  - Memory Interfaces: AXI DDR controllers (6,085 LUT + 88 BRAM)
+
+==================================================================================
+
+==================================================================================
+-- utilization_report.txt --
+==================================================================================
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.1 (lin64) Build 5076996 Wed May 22 18:36:09 MDT 2024
+| Date         : Tue Apr 21 13:13:14 2026
+| Host         : liu running 64-bit Ubuntu 22.04.5 LTS
+| Command      : report_utilization -file /home/mahdieh/data/AIE_Versal/LLM2/Versal_AI_ML_Engines_GEMM-main/Versal_AI_ML_Engines_GEMM/rectangular_GEMM/reports/gemm_512x512x512/x1/utilization_report.txt -verbose
+| Design       : ext_platform_part_wrapper
+| Device       : xcve2302-sfva784-1LHP-i-L
+| Speed File   : -1LHP
+| Design State : Physopt postRoute
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Netlist Logic
+2. CLB Distribution
+3. BLOCKRAM
+4. ARITHMETIC
+5. I/O
+6. CLOCK
+7. NOC Interfaces
+8. AI Engines
+9. ADVANCED
+10. Primitives
+11. Black Boxes
+12. Instantiated Netlists
+
+1. Netlist Logic
+----------------
+
++----------------------------+-------+-------+------------+-----------+-------+
+|          Site Type         |  Used | Fixed | Prohibited | Available | Util% |
++----------------------------+-------+-------+------------+-----------+-------+
+| Registers                  | 26530 |     0 |          0 |    300544 |  8.83 |
+|   Register as Flip Flop    | 26530 |     0 |          0 |    300544 |  8.83 |
+|   Register as Latch        |     0 |     0 |          0 |    300544 |  0.00 |
+| CLB LUTs                   |  9282 |     0 |          0 |    150272 |  6.18 |
+|   LUT as Logic             |  8361 |     0 |          0 |    150272 |  5.56 |
+|   LUT as Memory            |   921 |     0 |          0 |     75136 |  1.23 |
+|     LUT as Distributed RAM |   160 |     0 |            |           |       |
+|     LUT as Shift Register  |   761 |     0 |            |           |       |
+|       Variable Length SRL  |   748 |     0 |            |           |       |
+|       Fixed Length SRL     |    13 |     0 |            |           |       |
+| LOOKAHEAD8                 |    73 |     0 |          0 |     18784 |  0.39 |
++----------------------------+-------+-------+------------+-----------+-------+
+* Warning! LUT value is adjusted to account for LUT combining.
+
+
+
+
+==================================================================================
+-- timing_summary.txt --
+==================================================================================
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version      : Vivado v.2024.1 (lin64) Build 5076996 Wed May 22 18:36:09 MDT 2024
+| Date              : Tue Apr 21 13:13:39 2026
+| Host              : liu running 64-bit Ubuntu 22.04.5 LTS
+| Command           : report_timing_summary -file /home/mahdieh/data/AIE_Versal/LLM2/Versal_AI_ML_Engines_GEMM-main/Versal_AI_ML_Engines_GEMM/rectangular_GEMM/reports/gemm_512x512x512/x1/timing_summary.txt -verbose
+| Design            : ext_platform_part_wrapper
+| Device            : xcve2302-sfva784
+| Speed File        : -1LHP  PRODUCTION 2.01 2024-03-28
+| Design State      : Physopt postRoute
+| Temperature Grade : I
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Timing Summary Report
+
+------------------------------------------------------------------------------------------------
+| Timer Settings
+| --------------
+------------------------------------------------------------------------------------------------
+
+  Enable Multi Corner Analysis               :  Yes
+  Enable Pessimism Removal                   :  Yes
+  Pessimism Removal Resolution               :  Nearest Common Node
+  Enable Input Delay Default Clock           :  No
+  Enable Preset / Clear Arcs                 :  No
+  Disable Flight Delays                      :  No
+  Ignore I/O Paths                           :  No
+  Timing Early Launch at Borrowing Latches   :  No
+  Borrow Time for Max Delay Exceptions       :  Yes
+  Merge Timing Exceptions                    :  Yes
+  Inter-SLR Compensation                     :  Conservative
+
+  Corner  Analyze    Analyze    
+  Name    Max Paths  Min Paths  
+  ------  ---------  ---------  
+  Slow    Yes        Yes        
+  Fast    Yes        Yes        
+
+
+------------------------------------------------------------------------------------------------
+| Report Methodology
+| ------------------
+------------------------------------------------------------------------------------------------
+
+Rule      Severity  Description                                        Violations  
+--------  --------  -------------------------------------------------  ----------  
+AVAL-344  Warning   Design_needs_USER_RAM_AVERAGE_ACTIVITY_set         1           
+CLKC-69   Advisory  MMCME5 not driven by IO has BUFG in feedback loop  1           
+CLKC-72   Advisory  Substitute PLL for MMCME5 check                    1           
+CLKC-75   Advisory  MMCME5 with global clock driver has no LOC         2           
+
+
+==================================================================================
+-- power_report.txt --
+==================================================================================
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version     : Vivado v.2024.1 (lin64) Build 5076996 Wed May 22 18:36:09 MDT 2024
+| Date             : Tue Apr 21 13:13:25 2026
+| Host             : liu running 64-bit Ubuntu 22.04.5 LTS
+| Command          : report_power -file /home/mahdieh/data/AIE_Versal/LLM2/Versal_AI_ML_Engines_GEMM-main/Versal_AI_ML_Engines_GEMM/rectangular_GEMM/reports/gemm_512x512x512/x1/power_report.txt -verbose
+| Design           : ext_platform_part_wrapper
+| Device           : xcve2302-sfva784-1LHP-i-L
+| Design State     : routed
+| Grade            : industrial
+| Process          : typical
+| Characterization : Production
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Power Report
+
+Table of Contents
+-----------------
+1. Summary
+1.1 On-Chip Components
+1.2 Power Supply Summary
+1.3 Confidence Level
+2. Settings
+2.1 Environment
+2.2 Clock Constraints
+3. Detailed Reports
+3.1 By Hierarchy
+3.2 By Clock Domain
+3.3 By Resource Type
+3.3.1 I/O
+3.3.2 Signals
+3.3.3 CLB Logic
+3.3.4 Block RAM
+3.3.5 Clock Manager
+3.3.6 PS_PMC
+3.3.7 NOC
+3.3.8 AI Engine-ML
+3.3.9 DDRMC
+3.3.10 XRAM
+
+1. Summary
+----------
+
++--------------------------+--------------+
+| Total On-Chip Power (W)  | 10.661       |
+| Design Power Budget (W)  | Unspecified* |
+| Power Budget Margin (W)  | NA           |
+| Dynamic (W)              | 8.871        |
+| Device Static (W)        | 1.791        |
+| Effective TJA (C/W)      | 7.0          |
+
+
+==================================================================================
+-- memory_power.txt --
+==================================================================================
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version     : Vivado v.2024.1 (lin64) Build 5076996 Wed May 22 18:36:09 MDT 2024
+| Date             : Tue Apr 21 13:14:09 2026
+| Host             : liu running 64-bit Ubuntu 22.04.5 LTS
+| Command          : report_power -file /home/mahdieh/data/AIE_Versal/LLM2/Versal_AI_ML_Engines_GEMM-main/Versal_AI_ML_Engines_GEMM/rectangular_GEMM/reports/gemm_512x512x512/x1/memory_power.txt
+| Design           : ext_platform_part_wrapper
+| Device           : xcve2302-sfva784-1LHP-i-L
+| Design State     : routed
+| Grade            : industrial
+| Process          : typical
+| Characterization : Production
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Power Report
+
+Table of Contents
+-----------------
+1. Summary
+1.1 On-Chip Components
+1.2 Power Supply Summary
+1.3 Confidence Level
+2. Settings
+2.1 Environment
+2.2 Clock Constraints
+3. Detailed Reports
+3.1 By Hierarchy
+
+1. Summary
+----------
+
++--------------------------+--------------+
+| Total On-Chip Power (W)  | 10.661       |
+| Design Power Budget (W)  | Unspecified* |
+| Power Budget Margin (W)  | NA           |
+| Dynamic (W)              | 8.871        |
+| Device Static (W)        | 1.791        |
+| Effective TJA (C/W)      | 7.0          |
+| Max Ambient (C)          | 25.0         |
+| Junction Temperature (C) | 100.0        |
+| Confidence Level         | Low          |
+| Setting File             | ---          |
+| Simulation Activity File | ---          |
+| Design Nets Matched      | NA           |
++--------------------------+--------------+
+* Specify Design Power Budget using, set_operating_conditions -design_power_budget <value in Watts>
+
+
+1.1 On-Chip Components
+----------------------
+
+
+==================================================================================
+-- memory_utilization.txt --
+==================================================================================
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.1 (lin64) Build 5076996 Wed May 22 18:36:09 MDT 2024
+| Date         : Tue Apr 21 13:14:06 2026
+| Host         : liu running 64-bit Ubuntu 22.04.5 LTS
+| Command      : report_utilization -file /home/mahdieh/data/AIE_Versal/LLM2/Versal_AI_ML_Engines_GEMM-main/Versal_AI_ML_Engines_GEMM/rectangular_GEMM/reports/gemm_512x512x512/x1/memory_utilization.txt -cells [get_cells -hierarchical -filter {NAME =~ "*memory*" || NAME =~ "*bram*" || NAME =~ "*ultra*" || NAME =~ "*ram*"}]
+| Design       : ext_platform_part_wrapper
+| Device       : xcve2302-sfva784-1LHP-i-L
+| Speed File   : -1LHP
+| Design State : Physopt postRoute
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Netlist Logic
+2. CLB Distribution
+3. BLOCKRAM
+4. ARITHMETIC
+5. I/O
+6. CLOCK
+7. NOC Interfaces
+8. AI Engines
+9. ADVANCED
+10. Primitives
+11. Black Boxes
+12. Instantiated Netlists
+
+1. Netlist Logic
+----------------
+
++-------------------------+------+-------+------------+-----------+-------+
+|        Site Type        | Used | Fixed | Prohibited | Available | Util% |
++-------------------------+------+-------+------------+-----------+-------+
+| Registers               |   77 |     0 |          0 |    300544 |  0.03 |
+|   Register as Flip Flop |   77 |     0 |          0 |    300544 |  0.03 |
+|   Register as Latch     |    0 |     0 |          0 |    300544 |  0.00 |
+| CLB LUTs                |  483 |     0 |          0 |    150272 |  0.32 |
+|   LUT as Logic          |  483 |     0 |          0 |    150272 |  0.32 |
+|   LUT as Memory         |    0 |     0 |          0 |     75136 |  0.00 |
+| LOOKAHEAD8              |    0 |     0 |          0 |     18784 |  0.00 |
++-------------------------+------+-------+------------+-----------+-------+
+* Warning! LUT value is adjusted to account for LUT combining.
+
+
+2. CLB Distribution
+-------------------
+
++-----------------------------------------------+------+-------+------------+-----------+-------+
+
+
+==================================================================================
+-- resources_by_type.txt --
+==================================================================================
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.1 (lin64) Build 5076996 Wed May 22 18:36:09 MDT 2024
+| Date         : Tue Apr 21 13:13:47 2026
+| Host         : liu running 64-bit Ubuntu 22.04.5 LTS
+| Command      : report_utilization -file /home/mahdieh/data/AIE_Versal/LLM2/Versal_AI_ML_Engines_GEMM-main/Versal_AI_ML_Engines_GEMM/rectangular_GEMM/reports/gemm_512x512x512/x1/resources_by_type.txt -verbose
+| Design       : ext_platform_part_wrapper
+| Device       : xcve2302-sfva784-1LHP-i-L
+| Speed File   : -1LHP
+| Design State : Physopt postRoute
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Netlist Logic
+2. CLB Distribution
+3. BLOCKRAM
+4. ARITHMETIC
+5. I/O
+6. CLOCK
+7. NOC Interfaces
+8. AI Engines
+9. ADVANCED
+10. Primitives
+11. Black Boxes
+12. Instantiated Netlists
+
+1. Netlist Logic
+----------------
+
++----------------------------+-------+-------+------------+-----------+-------+
+|          Site Type         |  Used | Fixed | Prohibited | Available | Util% |
++----------------------------+-------+-------+------------+-----------+-------+
+| Registers                  | 26530 |     0 |          0 |    300544 |  8.83 |
+|   Register as Flip Flop    | 26530 |     0 |          0 |    300544 |  8.83 |
+|   Register as Latch        |     0 |     0 |          0 |    300544 |  0.00 |
+| CLB LUTs                   |  9282 |     0 |          0 |    150272 |  6.18 |
+|   LUT as Logic             |  8361 |     0 |          0 |    150272 |  5.56 |
+|   LUT as Memory            |   921 |     0 |          0 |     75136 |  1.23 |
+|     LUT as Distributed RAM |   160 |     0 |            |           |       |
+|     LUT as Shift Register  |   761 |     0 |            |           |       |
+|       Variable Length SRL  |   748 |     0 |            |           |       |
+|       Fixed Length SRL     |    13 |     0 |            |           |       |
+| LOOKAHEAD8                 |    73 |     0 |          0 |     18784 |  0.39 |
++----------------------------+-------+-------+------------+-----------+-------+
+* Warning! LUT value is adjusted to account for LUT combining.
+
+
+
+
+==================================================================================
+-- resources_by_clock.txt --
+==================================================================================
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.1 (lin64) Build 5076996 Wed May 22 18:36:09 MDT 2024
+| Date         : Tue Apr 21 13:13:47 2026
+| Host         : liu running 64-bit Ubuntu 22.04.5 LTS
+| Command      : report_utilization -file /home/mahdieh/data/AIE_Versal/LLM2/Versal_AI_ML_Engines_GEMM-main/Versal_AI_ML_Engines_GEMM/rectangular_GEMM/reports/gemm_512x512x512/x1/resources_by_clock.txt -verbose
+| Design       : ext_platform_part_wrapper
+| Device       : xcve2302-sfva784-1LHP-i-L
+| Speed File   : -1LHP
+| Design State : Physopt postRoute
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Netlist Logic
+2. CLB Distribution
+3. BLOCKRAM
+4. ARITHMETIC
+5. I/O
+6. CLOCK
+7. NOC Interfaces
+8. AI Engines
+9. ADVANCED
+10. Primitives
+11. Black Boxes
+12. Instantiated Netlists
+
+1. Netlist Logic
+----------------
+
++----------------------------+-------+-------+------------+-----------+-------+
+|          Site Type         |  Used | Fixed | Prohibited | Available | Util% |
++----------------------------+-------+-------+------------+-----------+-------+
+| Registers                  | 26530 |     0 |          0 |    300544 |  8.83 |
+|   Register as Flip Flop    | 26530 |     0 |          0 |    300544 |  8.83 |
+|   Register as Latch        |     0 |     0 |          0 |    300544 |  0.00 |
+| CLB LUTs                   |  9282 |     0 |          0 |    150272 |  6.18 |
+|   LUT as Logic             |  8361 |     0 |          0 |    150272 |  5.56 |
+|   LUT as Memory            |   921 |     0 |          0 |     75136 |  1.23 |
+|     LUT as Distributed RAM |   160 |     0 |            |           |       |
+|     LUT as Shift Register  |   761 |     0 |            |           |       |
+|       Variable Length SRL  |   748 |     0 |            |           |       |
+|       Fixed Length SRL     |    13 |     0 |            |           |       |
+| LOOKAHEAD8                 |    73 |     0 |          0 |     18784 |  0.39 |
++----------------------------+-------+-------+------------+-----------+-------+
+* Warning! LUT value is adjusted to account for LUT combining.
+
+
+
+
+==================================================================================
+-- aie_utilization.txt --
+==================================================================================
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.1 (lin64) Build 5076996 Wed May 22 18:36:09 MDT 2024
+| Date         : Tue Apr 21 13:13:50 2026
+| Host         : liu running 64-bit Ubuntu 22.04.5 LTS
+| Command      : report_utilization -file /home/mahdieh/data/AIE_Versal/LLM2/Versal_AI_ML_Engines_GEMM-main/Versal_AI_ML_Engines_GEMM/rectangular_GEMM/reports/gemm_512x512x512/x1/aie_utilization.txt -cells [get_cells -hierarchical -filter {REF_NAME =~ "*AI_ENGINE*" || REF_NAME =~ "*AIE*" || NAME =~ "*ai_engine*" || NAME =~ "*aie*"}]
+| Design       : ext_platform_part_wrapper
+| Device       : xcve2302-sfva784-1LHP-i-L
+| Speed File   : -1LHP
+| Design State : Physopt postRoute
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Netlist Logic
+2. CLB Distribution
+3. BLOCKRAM
+4. ARITHMETIC
+5. I/O
+6. CLOCK
+7. NOC Interfaces
+8. AI Engines
+9. ADVANCED
+10. Primitives
+11. Black Boxes
+12. Instantiated Netlists
+
+1. Netlist Logic
+----------------
+
++----------------------------+-------+-------+------------+-----------+-------+
+|          Site Type         |  Used | Fixed | Prohibited | Available | Util% |
++----------------------------+-------+-------+------------+-----------+-------+
+| Registers                  | 10092 |     0 |          0 |    300544 |  3.36 |
+|   Register as Flip Flop    | 10092 |     0 |          0 |    300544 |  3.36 |
+|   Register as Latch        |     0 |     0 |          0 |    300544 |  0.00 |
+| CLB LUTs                   |  2147 |     0 |          0 |    150272 |  1.43 |
+|   LUT as Logic             |  1987 |     0 |          0 |    150272 |  1.32 |
+|   LUT as Memory            |   160 |     0 |          0 |     75136 |  0.21 |
+|     LUT as Distributed RAM |   160 |     0 |            |           |       |
+|     LUT as Shift Register  |     0 |     0 |            |           |       |
+|       Variable Length SRL  |     0 |     0 |            |           |       |
+|       Fixed Length SRL     |     0 |     0 |            |           |       |
+| LOOKAHEAD8                 |     0 |     0 |          0 |     18784 |  0.00 |
++----------------------------+-------+-------+------------+-----------+-------+
+* Warning! LUT value is adjusted to account for LUT combining.
+
+
+
+
+==================================================================================
+-- dsp_utilization.txt --
+==================================================================================
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2024.1 (lin64) Build 5076996 Wed May 22 18:36:09 MDT 2024
+| Date         : Tue Apr 21 13:14:14 2026
+| Host         : liu running 64-bit Ubuntu 22.04.5 LTS
+| Command      : report_utilization -file /home/mahdieh/data/AIE_Versal/LLM2/Versal_AI_ML_Engines_GEMM-main/Versal_AI_ML_Engines_GEMM/rectangular_GEMM/reports/gemm_512x512x512/x1/dsp_utilization.txt -cells [get_cells -hierarchical -filter {NAME =~ "*dsp*" || NAME =~ "*mult*"}]
+| Design       : ext_platform_part_wrapper
+| Device       : xcve2302-sfva784-1LHP-i-L
+| Speed File   : -1LHP
+| Design State : Physopt postRoute
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Utilization Design Information
+
+Table of Contents
+-----------------
+1. Netlist Logic
+2. CLB Distribution
+3. BLOCKRAM
+4. ARITHMETIC
+5. I/O
+6. CLOCK
+7. NOC Interfaces
+8. AI Engines
+9. ADVANCED
+10. Primitives
+11. Black Boxes
+12. Instantiated Netlists
+
+1. Netlist Logic
+----------------
+
++-------------------------+------+-------+------------+-----------+-------+
+|        Site Type        | Used | Fixed | Prohibited | Available | Util% |
++-------------------------+------+-------+------------+-----------+-------+
+| Registers               |  222 |     0 |          0 |    300544 |  0.07 |
+|   Register as Flip Flop |  222 |     0 |          0 |    300544 |  0.07 |
+|   Register as Latch     |    0 |     0 |          0 |    300544 |  0.00 |
+| CLB LUTs                |  215 |     0 |          0 |    150272 |  0.14 |
+|   LUT as Logic          |  215 |     0 |          0 |    150272 |  0.14 |
+|   LUT as Memory         |    0 |     0 |          0 |     75136 |  0.00 |
+| LOOKAHEAD8              |   21 |     0 |          0 |     18784 |  0.11 |
++-------------------------+------+-------+------------+-----------+-------+
+* Warning! LUT value is adjusted to account for LUT combining.
+
+
+2. CLB Distribution
+-------------------
+
++-----------------------------------------------+------+-------+------------+-----------+-------+
+
+
