@@ -4,16 +4,6 @@ Our paper **"TEMPUS: A Temporally Scalable Resource-Invariant GEMM Streaming Fra
 
 [![arXiv](https://img.shields.io/badge/arXiv-2605.00536-b31b1b.svg)](https://arxiv.org/abs/2605.00536)
 
-If you use this code in your research, please cite our paper:
-
-```bibtex
-@article{tempus2025,
-  title={TEMPUS: A Temporally Scalable Resource-Invariant GEMM Streaming Framework for Versal AI Edge},
-  author={[Your Last Name, First Name] and [Co-authors]},
-  journal={arXiv preprint arXiv:2605.00536},
-  year={2025}
-}
-
 ## Versal AI-ML Engines GEMM Collection
 
 This repository contains several related GEMM (General Matrix Multiply) designs targeting AMD Versal AI Engine‑ML (AIE‑ML) devices. Each subdirectory is a self‑contained project with its own configuration, build flow, and documentation.
