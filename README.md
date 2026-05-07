@@ -1,6 +1,7 @@
 ## 📄 Paper
 
 Our paper **"TEMPUS: A Temporally Scalable Resource-Invariant GEMM Streaming Framework for Versal AI Edge"** is available on arXiv:
+https://arxiv.org/abs/2605.00536
 
 [![arXiv](https://img.shields.io/badge/arXiv-2605.00536-b31b1b.svg)](https://arxiv.org/abs/2605.00536)
 
